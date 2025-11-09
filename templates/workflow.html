@@ -1,0 +1,76 @@
+{% extends "base.html" %}
+
+{% block title %}{{ feature.name }} - Workflow{% endblock %}
+
+{% block content %}
+<div class="max-w-6xl mx-auto">
+    <div class="bg-white rounded-lg shadow-lg p-8 mb-6">
+        <div class="flex items-center justify-between mb-6">
+            <div>
+                <h1 class="text-3xl font-bold text-gray-800">{{ feature.name }}</h1>
+                <p class="text-gray-600 mt-2">{{ feature.description or 'No description' }}</p>
+            </div>
+            <a href="/" class="text-gray-600 hover:text-gray-800 font-semibold">
+                <svg class="w-5 h-5 inline mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"></path>
+                </svg>
+                Back to Dashboard
+            </a>
+        </div>
+
+        <div class="mb-6">
+            <div class="flex items-center justify-between mb-2">
+                <span class="text-sm font-semibold text-gray-700">Workflow Progress</span>
+                <span class="text-sm text-gray-600">{{ feature.stage_index + 1 }} of {{ stages|length }} stages</span>
+            </div>
+            <div class="w-full bg-gray-200 rounded-full h-3">
+                <div class="bg-gradient-to-r from-indigo-600 to-purple-600 h-3 rounded-full transition-all duration-500" style="width: {{ ((feature.stage_index + 1) / stages|length * 100)|round }}%"></div>
+            </div>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {% for stage in stages %}
+            <a href="/feature/{{ feature.id }}/stage/{{ loop.index0 }}" 
+               class="block border-2 rounded-lg p-5 transition transform hover:scale-105 
+                      {% if loop.index0 < feature.stage_index %}border-green-400 bg-green-50 stage-completed text-white
+                      {% elif loop.index0 == feature.stage_index %}border-indigo-500 bg-gradient-to-br from-indigo-500 to-purple-600 stage-active text-white shadow-lg
+                      {% else %}border-gray-300 bg-white stage-pending{% endif %}">
+                <div class="flex items-start justify-between mb-3">
+                    <span class="{% if loop.index0 == feature.stage_index %}bg-white text-indigo-600{% elif loop.index0 < feature.stage_index %}bg-white text-green-600{% else %}bg-gray-300 text-gray-600{% endif %} font-bold rounded-full w-8 h-8 flex items-center justify-center text-sm">
+                        {% if loop.index0 < feature.stage_index %}
+                            ✓
+                        {% else %}
+                            {{ loop.index }}
+                        {% endif %}
+                    </span>
+                    {% if loop.index0 == feature.stage_index %}
+                    <span class="bg-yellow-400 text-yellow-900 text-xs px-2 py-1 rounded-full font-semibold">CURRENT</span>
+                    {% elif loop.index0 < feature.stage_index %}
+                    <span class="bg-white text-green-600 text-xs px-2 py-1 rounded-full font-semibold">DONE</span>
+                    {% endif %}
+                </div>
+                <h3 class="font-bold text-lg mb-1">{{ stage }}</h3>
+                <p class="text-sm opacity-90">
+                    {% if loop.index0 < feature.stage_index %}Completed
+                    {% elif loop.index0 == feature.stage_index %}In Progress
+                    {% else %}Pending{% endif %}
+                </p>
+            </a>
+            {% endfor %}
+        </div>
+    </div>
+
+    {% if feature.stage_index >= stages|length - 1 and stage_data.get(stages[-1], {}).get('completed') %}
+    <div class="bg-gradient-to-r from-green-500 to-emerald-600 text-white rounded-lg shadow-lg p-8 text-center">
+        <svg class="w-16 h-16 mx-auto mb-4" fill="currentColor" viewBox="0 0 20 20">
+            <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"></path>
+        </svg>
+        <h2 class="text-3xl font-bold mb-2">Workflow Completed!</h2>
+        <p class="text-lg mb-6">Feature "{{ feature.name }}" has successfully completed all workflow stages.</p>
+        <a href="/" class="inline-block bg-white text-green-600 px-6 py-3 rounded-lg font-semibold hover:bg-gray-100 transition">
+            Return to Dashboard
+        </a>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

@@ -1,0 +1,338 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dependency Analyzer - AI Feature Merger</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        .step-card {
+            background: white;
+            border-radius: 12px;
+            padding: 24px;
+            margin-bottom: 24px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+        }
+        .step-card h3 {
+            color: #1a1a1a;
+            font-size: 18px;
+            font-weight: 600;
+            margin-bottom: 16px;
+        }
+        .input-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 16px;
+            margin-bottom: 16px;
+        }
+        .input-group {
+            margin-bottom: 16px;
+        }
+        .input-group label {
+            display: block;
+            color: #4a4a4a;
+            font-size: 14px;
+            font-weight: 500;
+            margin-bottom: 8px;
+        }
+        .input-group input,
+        .input-group select {
+            width: 100%;
+            padding: 10px 12px;
+            border: 1px solid #e0e0e0;
+            border-radius: 6px;
+            font-size: 14px;
+            transition: border-color 0.3s;
+        }
+        .input-group input:focus,
+        .input-group select:focus {
+            outline: none;
+            border-color: #5b5fc7;
+        }
+        .btn {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 6px;
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        .btn-primary {
+            background: #5b5fc7;
+            color: white;
+        }
+        .btn-primary:hover {
+            background: #4a4eb0;
+        }
+        .btn-success {
+            background: #28a745;
+            color: white;
+        }
+        .btn-success:hover {
+            background: #218838;
+        }
+        .btn-secondary {
+            background: #6c757d;
+            color: white;
+            margin-left: 8px;
+        }
+        .btn-secondary:hover {
+            background: #5a6268;
+        }
+        .btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        .table-container {
+            overflow-x: auto;
+            margin-top: 16px;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        thead {
+            background: #f8f9fa;
+        }
+        th {
+            padding: 12px;
+            text-align: left;
+            font-size: 13px;
+            font-weight: 600;
+            color: #4a4a4a;
+            border-bottom: 2px solid #e0e0e0;
+        }
+        td {
+            padding: 12px;
+            font-size: 13px;
+            border-bottom: 1px solid #e0e0e0;
+        }
+        tbody tr:hover {
+            background: #f8f9fa;
+        }
+        .status-badge {
+            display: inline-block;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+            font-weight: 500;
+        }
+        .status-success {
+            background: #d4edda;
+            color: #155724;
+        }
+        .status-error {
+            background: #f8d7da;
+            color: #721c24;
+        }
+        .hidden {
+            display: none;
+        }
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: #6c757d;
+        }
+        .spinner {
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #5b5fc7;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 16px;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        .search-box {
+            margin-bottom: 16px;
+        }
+        .search-box input {
+            width: 100%;
+            padding: 10px 12px;
+            border: 1px solid #e0e0e0;
+            border-radius: 6px;
+            font-size: 14px;
+        }
+        .empty-state {
+            text-align: center;
+            padding: 40px;
+            color: #6c757d;
+        }
+        .file-list {
+            font-size: 12px;
+            color: #6c757d;
+            margin-top: 4px;
+        }
+    </style>
+</head>
+<body>
+    <div class="sidebar">
+        <div class="logo">
+            <h1>AI Feature Merger</h1>
+            <p>Code Analysis Platform</p>
+        </div>
+        
+        <nav class="nav-menu">
+            <a href="{{ url_for('dependency_analyzer') }}" class="nav-link active">
+                <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path>
+                </svg>
+                Dependency Analyzer
+            </a>
+            <a href="{{ url_for('new_analysis') }}" class="nav-link">
+                <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path>
+                </svg>
+                New Analysis
+            </a>
+            <a href="{{ url_for('list_files') }}" class="nav-link">
+                <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"></path>
+                </svg>
+                View Files
+            </a>
+        </nav>
+        
+        <div class="sidebar-footer">
+            <p>Powered by Infiniti</p>
+        </div>
+    </div>
+
+    <div class="main-content">
+        <div class="container">
+            <header>
+                <h1>Git Commit Dependency Analyzer</h1>
+                <p>Analyze Git commit dependencies based on file and line overlaps</p>
+            </header>
+
+            <!-- Step 1: Repository Setup -->
+            <div class="step-card">
+                <h3>Step 1: Repository Setup</h3>
+                <div class="input-group">
+                    <label for="repo-path">Repository Path</label>
+                    <div style="display: flex; gap: 8px;">
+                        <input type="text" id="repo-path" placeholder="Enter path to Git repository (e.g., /path/to/repo)">
+                        <button class="btn btn-primary" id="validate-repo">Validate</button>
+                    </div>
+                    <small style="display: block; margin-top: 4px; color: #6c757d;">Enter the full path to a local Git repository</small>
+                    <div id="repo-status"></div>
+                </div>
+                
+                <div class="input-row">
+                    <div class="input-group">
+                        <label for="branch-select">Branch</label>
+                        <select id="branch-select" disabled>
+                            <option value="">Select a branch...</option>
+                        </select>
+                    </div>
+                </div>
+                
+                <div class="input-row">
+                    <div class="input-group">
+                        <label for="start-date">Start Date</label>
+                        <input type="date" id="start-date" disabled>
+                    </div>
+                    <div class="input-group">
+                        <label for="end-date">End Date</label>
+                        <input type="date" id="end-date" disabled>
+                    </div>
+                </div>
+                
+                <button class="btn btn-primary" id="load-commits" disabled>Load Commits</button>
+            </div>
+
+            <!-- Step 2: Commit Selection -->
+            <div class="step-card hidden" id="commits-section">
+                <h3>Step 2: Select Target Commit</h3>
+                <div class="search-box">
+                    <input type="text" id="commit-search" placeholder="Search commits by hash, author, or message...">
+                </div>
+                <div class="table-container">
+                    <table id="commits-table">
+                        <thead>
+                            <tr>
+                                <th width="80">Select</th>
+                                <th>Hash</th>
+                                <th>Author</th>
+                                <th>Date</th>
+                                <th>Message</th>
+                            </tr>
+                        </thead>
+                        <tbody id="commits-tbody">
+                        </tbody>
+                    </table>
+                </div>
+                <div class="empty-state hidden" id="commits-empty">
+                    No commits found in the specified date range
+                </div>
+                <button class="btn btn-success" id="analyze-dependencies" disabled style="margin-top: 16px;">Analyze Dependencies</button>
+            </div>
+
+            <!-- Step 3: Dependency Results -->
+            <div class="step-card hidden" id="results-section">
+                <h3>Step 3: Dependency Analysis Results</h3>
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+                    <div class="search-box" style="flex: 1; margin-bottom: 0; margin-right: 16px;">
+                        <input type="text" id="results-search" placeholder="Search results by hash, author, or message...">
+                    </div>
+                    <div>
+                        <button class="btn btn-secondary" id="export-csv" disabled>Export CSV</button>
+                        <button class="btn btn-secondary" id="export-json" disabled>Export JSON</button>
+                    </div>
+                </div>
+                <div class="table-container">
+                    <table id="results-table">
+                        <thead>
+                            <tr>
+                                <th>Hash</th>
+                                <th>Author</th>
+                                <th>Date</th>
+                                <th>Message</th>
+                                <th>Overlap Files</th>
+                                <th>Overlap Count</th>
+                            </tr>
+                        </thead>
+                        <tbody id="results-tbody">
+                        </tbody>
+                    </table>
+                </div>
+                <div class="empty-state hidden" id="results-empty">
+                    No dependencies found for the selected commit
+                </div>
+            </div>
+
+            <!-- Loading indicator -->
+            <div class="loading hidden" id="loading">
+                <div class="spinner"></div>
+                <div id="loading-text">Processing...</div>
+            </div>
+        </div>
+    </div>
+
+    <script src="{{ url_for('static', filename='dependency_analyzer.js') }}"></script>
+    <script>
+        // Set default dates: June 1, 2024 to current date
+        document.addEventListener('DOMContentLoaded', function() {
+            const startDateInput = document.getElementById('start-date');
+            const endDateInput = document.getElementById('end-date');
+            
+            // Set start date to June 1, 2024
+            startDateInput.value = '2024-06-01';
+            
+            // Set end date to current date
+            const today = new Date();
+            const year = today.getFullYear();
+            const month = String(today.getMonth() + 1).padStart(2, '0');
+            const day = String(today.getDate()).padStart(2, '0');
+            endDateInput.value = `${year}-${month}-${day}`;
+        });
+    </script>
+</body>
+</html>
