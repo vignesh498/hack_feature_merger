@@ -11,3 +11,7 @@ Flask-SQLAlchemy
 GitPython
 psycopg2-binary
 python-dotenv
+pandas
+PyPDF2
+python-docx
+requests

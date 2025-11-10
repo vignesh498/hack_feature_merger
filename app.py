@@ -6,6 +6,9 @@ from werkzeug.utils import secure_filename
 import json
 import logging
 from dependency_service import DependencyService
+from vcs_handler import generate_git_patch, generate_svn_patch
+from document_processor import extract_text_from_file
+from gemini_helper import analyze_brd_and_patch
 
 logging.basicConfig(level=logging.INFO)
 
@@ -43,6 +46,10 @@ class Feature(db.Model):
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     file_path = db.Column(db.String(500))
     stage_data = db.Column(db.Text, default='{}')
+    
+    commit_id = db.Column(db.String(100))
+    patch_file_path = db.Column(db.String(500))
+    analysis_file_path = db.Column(db.String(500))
     
     def __repr__(self):
         return f'<Feature {self.name}>'
@@ -175,6 +182,112 @@ def process_stage(feature_id, stage_index):
                 else:
                     flash(result['error'], 'error')
         
+        elif action == 'generate_patch' and stage_name == 'Patch Generation':
+            vcs_type = request.form.get('vcs_type', '').strip()
+            repo_url = request.form.get('repo_url', '').strip()
+            commit_hash = request.form.get('commit_hash', '').strip()
+            
+            if not vcs_type or not repo_url or not commit_hash:
+                flash('All fields are required for patch generation!', 'error')
+            else:
+                try:
+                    timestamp = datetime.utcnow().strftime('%Y%m%d_%H%M%S')
+                    patch_filename = f"{feature.name.replace(' ', '_')}_{timestamp}.patch"
+                    patch_path = os.path.join(app.config['GENERATED_FOLDER'], patch_filename)
+                    
+                    if vcs_type == 'git':
+                        generate_git_patch(repo_url, commit_hash, patch_path)
+                    elif vcs_type == 'svn':
+                        generate_svn_patch(repo_url, commit_hash, patch_path)
+                    else:
+                        flash('Invalid VCS type!', 'error')
+                        return render_template('stage.html', 
+                                             feature=feature, 
+                                             stage_name=stage_name,
+                                             stage_index=stage_index,
+                                             stage_content=get_stage_content(stage_name, feature),
+                                             stage_data=stage_data.get(stage_name, {}),
+                                             total_stages=len(WORKFLOW_STAGES))
+                    
+                    stage_data[stage_name] = {
+                        'completed': False,
+                        'timestamp': datetime.utcnow().isoformat(),
+                        'vcs_type': vcs_type,
+                        'repo_url': repo_url,
+                        'commit_hash': commit_hash,
+                        'patch_file': patch_path,
+                        'patch_filename': patch_filename
+                    }
+                    feature.set_stage_data(stage_data)
+                    
+                    feature.commit_id = commit_hash
+                    feature.patch_file_path = patch_path
+                    
+                    db.session.commit()
+                    flash(f'Patch generated successfully: {patch_filename}', 'success')
+                    
+                except Exception as e:
+                    logging.error(f"Error generating patch: {str(e)}")
+                    flash(f'Error generating patch: {str(e)}', 'error')
+        
+        elif action == 'analyze_ai' and stage_name == 'AI Analysis':
+            if 'brd_file' not in request.files:
+                flash('Please upload a BRD/User Story document!', 'error')
+            else:
+                brd_file = request.files['brd_file']
+                
+                if not brd_file.filename:
+                    flash('No file selected!', 'error')
+                else:
+                    try:
+                        patch_generation_data = stage_data.get('Patch Generation', {})
+                        patch_file_path = patch_generation_data.get('patch_file')
+                        
+                        if not patch_file_path or not os.path.exists(patch_file_path):
+                            flash('No patch file found. Please complete Patch Generation stage first!', 'error')
+                        else:
+                            timestamp = datetime.utcnow().strftime('%Y%m%d_%H%M%S')
+                            brd_filename = secure_filename(brd_file.filename)
+                            brd_path = os.path.join(app.config['UPLOAD_FOLDER'], f"{timestamp}_{brd_filename}")
+                            brd_file.save(brd_path)
+                            
+                            brd_content = extract_text_from_file(brd_path)
+                            
+                            with open(patch_file_path, 'r', encoding='utf-8') as f:
+                                patch_content = f.read()
+                            
+                            analysis_result = analyze_brd_and_patch(brd_content, patch_content)
+                            
+                            analysis_filename = f"{feature.name.replace(' ', '_')}_analysis_{timestamp}.md"
+                            analysis_path = os.path.join(app.config['GENERATED_FOLDER'], analysis_filename)
+                            
+                            with open(analysis_path, 'w', encoding='utf-8') as f:
+                                f.write(analysis_result)
+                            
+                            stage_data[stage_name] = {
+                                'completed': False,
+                                'timestamp': datetime.utcnow().isoformat(),
+                                'brd_file': brd_path,
+                                'brd_filename': brd_filename,
+                                'patch_file': patch_file_path,
+                                'analysis_file': analysis_path,
+                                'analysis_filename': analysis_filename,
+                                'analysis_preview': analysis_result[:500] + '...' if len(analysis_result) > 500 else analysis_result
+                            }
+                            feature.set_stage_data(stage_data)
+                            
+                            feature.analysis_file_path = analysis_path
+                            
+                            db.session.commit()
+                            flash(f'AI Analysis completed! Saved as {analysis_filename}', 'success')
+                            
+                    except Exception as e:
+                        logging.error(f"Error in AI analysis: {str(e)}")
+                        if "GEMINI_API_KEY" in str(e):
+                            flash('Gemini API key is not configured. Please add GEMINI_API_KEY to your environment secrets.', 'error')
+                        else:
+                            flash(f'Error during AI analysis: {str(e)}', 'error')
+        
         elif action == 'skip':
             if stage_index < len(WORKFLOW_STAGES) - 1:
                 feature.current_stage = WORKFLOW_STAGES[stage_index + 1]
@@ -212,12 +325,18 @@ def process_stage(feature_id, stage_index):
     
     stage_content = get_stage_content(stage_name, feature)
     
+    patch_file_info = None
+    if stage_name == 'AI Analysis' and 'Patch Generation' in stage_data:
+        patch_file_info = stage_data['Patch Generation'].get('patch_file')
+    
     return render_template('stage.html', 
                          feature=feature, 
                          stage_name=stage_name,
                          stage_index=stage_index,
                          stage_content=stage_content,
                          stage_data=stage_data.get(stage_name, {}),
+                         all_stage_data=stage_data,
+                         patch_file_info=patch_file_info,
                          analysis_result=analysis_result,
                          repo_info=repo_info,
                          total_stages=len(WORKFLOW_STAGES))
