@@ -1,0 +1,1235 @@
+
+You are a technical analyst helping developers understand feature implementations.
+Your task is to analyze a BRD (Business Requirements Document) or User Story and a code patch file, then generate a comprehensive analysis document.
+
+The analysis should include:
+1. **Feature Overview**: Summarize the feature from the BRD in simple terms
+2. **Technical Changes**: Explain what changes were made in the patch
+3. **Implementation Mapping**: How the code changes implement the BRD requirements
+4. **Files Modified**: List all files changed with brief descriptions
+5. **Key Functions/Methods**: Important code elements added or modified
+6. **Implementation Guide**: Step-by-step guide for implementing this feature in the latest branch
+7. **Considerations**: Any edge cases, dependencies, or important notes
+
+Format the response in clean, well-structured Markdown.
+
+BRD/User Story Content:
+---
+
+
+
+
+
+GroupRM
+Holiday Management
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Table of Contents
+1. Purpose	3
+2. Holiday Management	3
+3. Holiday Management Process Flow	3
+4. Creating Holiday list	4
+5. Example Scenario	7
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Purpose
+The purpose of this document is to briefly explain the creation and workflow of holiday management.
+Holiday Management
+Holiday management policy allows the user to save the holidays and non-business days in the application. By using this feature, the approver will be notified, if any of the validities expires on the holiday or non-business days. The application will throw an alert pop-up, when the airline administrator approves the group request which has the fare validity or name list validity expires on holiday or non-business days, so that the airline user can change the time-limit matrix according to the holidays.
+Holiday Management Process Flow
+The holiday management flow process is provided in the below section.
+
+Airline user creates the holiday list based on the holidays of the country and the city.
+When travel agent raise a group booking request, the request will be sent to airline user for processing.
+When the airline user approves the request, the application will check, whether the validities expire on the holiday dates or in business days.
+If the validity expires on holiday dates, the application will block the user by throwing an alert pop-up, requesting to change the validity date from contract manager.
+You can edit the time limit matrix from the contract manager and can set the validities to business days based on needs, the modified time limit is applicable only for the particular request, and it won’t get applied for the future group requests.
+Once after changing the expiry date of validity to business dates, the application allows the user to approve the request. 
+In the case of the autopilot policy, if one of the validities expires on a holiday, the application will change the validity to the following working day or, if the departure occurs on the next day, it will change the validity to the prior day.
+The application will show no error if the fare validity doesn’t expire on business days.
+Creating Holiday list
+Follow the steps given below to create an appropriate holiday list in the GRM application.
+On the menu bar point to Admin and click Holiday Management.
+
+Click Create Holiday.
+
+Enter the Holiday name (Name for holiday list), Country, City, Year, and status.
+Click Rolling for next year check-box, if the holiday list needs to be followed for next year.
+
+In the Calendar select the date and enter the Holiday name and click .
+
+Select the non-business hours of week.
+After entering the entire holiday list, click Save, and holiday list gets created.
+You can use the edit option  to modify the entered holiday name. Click  option to delete the entered the holiday name.
+
+You can modify and delete the created holiday management policy by using edit and delete option from the listing page.
+
+Example Scenario
+Below is the sample scenario in which it is been explained how the holiday list feature is applied to a request when the time limit falls on holidays.
+The scenario for holiday management is checked for the trip MAA-BOM, after setting the holidays accordingly.
+Trip: MAA – BOM
+Requested Date: 24-03-23.
+Departure date: 01-04-23
+Fare Validity: 25-03-23
+Payment Validity: 28-03-23
+Name List Validity: 29-03-23
+Holiday date: 28-03-23
+In this scenario when the airline user approves the request, the application will block the user by throwing the alert pop-up as shown below.
+
+The application will allow the user to approve the request only after changing the validity to business days by using the edit option in contract manager. 
+
+ 
+
+
+---
+
+Patch File Content:
+---
+Index: lib/script/moduleJs/adhocGroupRequest.js
+===================================================================
+--- lib/script/moduleJs/adhocGroupRequest.js	(revision 50609)
++++ lib/script/moduleJs/adhocGroupRequest.js	(revision 50610)
+@@ -352,6 +352,7 @@
+ 			 * loop through globalSeriesinputArray and requestPolicyData to validate the requestPage
+ 			 * */
+ 			 var completeData = this.formValues;
++			 this.formValues['chaneIternaryforClone'] = $('#changeIternaryInp').val() != undefined && $('#changeIternaryInp').val() == 'Y' ? 'Y' : 'N' ;
+ 				 var policyData = $("#requestPolicy").val();
+ 				 var policyDatas = $("#requestPolicy");
+ 
+Index: lib/script/moduleJs/holiday_calendar.js
+===================================================================
+--- lib/script/moduleJs/holiday_calendar.js	(revision 50609)
++++ lib/script/moduleJs/holiday_calendar.js	(revision 50610)
+@@ -530,6 +530,7 @@
+   $('#holidayListName').val('');
+   $('#rollonDiv').show(); 
+   $("#rolloncheck").checked = !$("#rolloncheck").checked;
++  $('#adsearch').hide();
+ });
+ 
+ $(document).on("click", ".link", function () {	
+Index: classesTpl/class.tpl.viewHistory.php
+===================================================================
+--- classesTpl/class.tpl.viewHistory.php	(revision 50609)
++++ classesTpl/class.tpl.viewHistory.php	(revision 50610)
+@@ -3753,7 +3753,7 @@
+ 	 * @Description		set the request master history (use request master id  and actual date 
+ 	 * 					to get nearest historyid and set that to downloadcontract param )
+ 	 **********************************************************/	
+-	private function _setRequestMasterHistoryId($_IrequestMasterId = 0,$_DactualDate)
++	public function _setRequestMasterHistoryId($_IrequestMasterId = 0,$_DactualDate)
+ 	{
+ 		if($_IrequestMasterId > 0 && !empty($_DactualDate))
+ 		{
+Index: classesTpl/class.tpl.timeLineExtensionV1.php
+===================================================================
+--- classesTpl/class.tpl.timeLineExtensionV1.php	(revision 50609)
++++ classesTpl/class.tpl.timeLineExtensionV1.php	(revision 50610)
+@@ -237,13 +237,18 @@
+ 		# Dellas time if days to departure is <=3 display only hours. Hide Days and Weeks
+ 		# >= 4 need to hide hours. Only display Days and Weeks in the dropdown
+ 		if(!empty($CFG["timelineExtenstion"]["paymentExpiryTimezone"]) && !empty($CFG["timelineExtenstion"]["paymentExpiryTime"])){
++			//Getting payment validity types for most restrictive scenario
++			$AvalidityTypes=array_column($_AtimelineValidityArray[$_Spnr]['paymentRequestDetails'], 'payment_validity_type');
+ 			if($_AtimelineValidityArray[$_Spnr]['daysToDepature'] <= 3){
+ 				$this->_AfareValidityDetails = $this->_AfareValidityDetails[2];
+ 				$_AtimelineValidityArray[$_Spnr]['paymentRequestDetails']['fareTypeDetails'][] = $this->_AfareValidityDetails;
+-			} else {
++			} else if(!in_array(5,$AvalidityTypes)){
+ 				unset($this->_AfareValidityDetails[2]);
+ 				$_AtimelineValidityArray[$_Spnr]['paymentRequestDetails']['fareTypeDetails'] = array_reverse($this->_AfareValidityDetails);
+ 			}
++			else{
++				$_AtimelineValidityArray[$_Spnr]['paymentRequestDetails']['fareTypeDetails'] = array_reverse($this->_AfareValidityDetails);
++			}
+ 			# Encode the fare validity details array
+ 			$this->_JfareValidityDetails=json_encode($this->_AfareValidityDetails);
+ 		} else {
+Index: classesTpl/class.tpl.holidayListInterface.php
+===================================================================
+--- classesTpl/class.tpl.holidayListInterface.php	(revision 50609)
++++ classesTpl/class.tpl.holidayListInterface.php	(revision 50610)
+@@ -1504,51 +1504,7 @@
+ 			$_AvalidityData=$this->_getAllValiditiestimeline($_SmoduleName,$_AinputData);
+ 			$checkflag = 'Y';
+ 			foreach($_AvalidityData['validities'] as $key => $_Aval) {
+-				$timelinekey = $key;
+-				unset($_Aval['paymentRequestDetails'][0]);
+-				foreach($_Aval['paymentRequestDetails'] as $paykey => $payval) {
+-					$_AvalidityData['validities'][$key]['paymentDetails'][$paykey-1]['payment_validity'] =  $_Aval['paymentRequestDetails'][ $paykey]['payment_validity'];
+-					$_AvalidityData['validities'][$key]['paymentDetails'][$paykey-1]['payment_validity_type_id'] = $_Aval['paymentRequestDetails'][ $paykey]['payment_validity_type'];
+-					$_AvalidityData['validities'][$key]['paymentDetails'][$paykey-1]['payment_expiry_id'] = $_Aval['paymentRequestDetails'][ $paykey]['payment_expiry_type'];
+-					$_AvalidityData['validities'][$key]['paymentDetails'][$paykey-1]['payment_expiry_date'] = $_Aval['paymentRequestDetails'][ $paykey]['paymentExpiryDate'];
+-					if($_Aval['paymentRequestDetails'][ $paykey]['payment_expiry_type'] != 2) {
+-						if($_Aval['paymentRequestDetails'][ $paykey]['payment_expiry_type'] == 4)
+-							$_AvalidityData['validities'][$key]['paymentDetails'][$paykey-1]['payment_expiry'] = "User action date"; 
+-						else 
+-							$_AvalidityData['validities'][$key]['paymentDetails'][$paykey-1]['payment_expiry'] = "Current date";
+-					} else {
+-						$_AvalidityData['validities'][$key]['paymentDetails'][$paykey-1]['payment_expiry'] = "Date of departure";
+-					}
+-				}
+-				if($_Aval['passengerValidityExtension'] != 'N') {
+-					$_AvalidityData['validities'][$key]['name_list_validity']	= $_Aval['passenger_validity'];
+-					$_AvalidityData['validities'][$key]['name_list_validity_type_id']	= $_Aval['passenger_type_id'];
+-					$_AvalidityData['validities'][$key]['name_list_expiry_id']	= $_Aval['passenger_expiry_type_id'];
+-					if($_Aval['passenger_expiry_type_id'] != 2){
+-						if($_Aval['passenger_expiry_type_id'] == 4)
+-							$_AvalidityData['validities'][$key]['name_list_expiry']	= "User action date";
+-						else 
+-							$_AvalidityData['validities'][$key]['name_list_expiry']	= "Current date";
+-					} else {
+-						$_AvalidityData['validities'][$key]['name_list_expiry']	= "Date of departure";
+-					}
+-				}
+-
+-				$_AvalidityData['validities'][$key]['payment_validity']	= $_Aval['payment_validity'];
+-				$_AvalidityData['validities'][$key]['payment_validity_type_id']	= $_Aval['payment_validity_type'];
+-				$_AvalidityData['validities'][$key]['payment_expiry_id']	= $_Aval['payment_expiry_type'];
+-				$_AvalidityData['validities'][$key]['payment_expiry_date']	= $_Aval['paymentRequestDetails'][0]['paymentExpiryDate'];
+-				$_AvalidityData['validities'][$key]['dateOfDeparture'] = date('Y-m-d H:i:s', strtotime($_Aval['depatureDate']));
+-				if($_Aval['payment_expiry_type'] != 2) {
+-					if($_Aval['payment_expiry_type'] == 4)
+-					$_AvalidityData['validities'][$key]['payment_expiry'] = "User Action date";
+-					else 
+-						$_AvalidityData['validities'][$key]['payment_expiry'] = "Current date";
+-				} else {
+-					$_AvalidityData['validities'][$key]['payment_expiry'] = "Date of departure";
+-				}
+-				//$_AvalidityData['validities'][$key]['dateOfDeparture']	= $this->_getDateFromValidity($_Aval['daysToDepature'],'days',date('Y-m-d H:i:s'),1);
+-				
++				$_AvalidityData['validities'][$key]=$this->_reassignPaymentDetailsValueArr(array($_Aval),'Y')[0];
+ 				$returnmsg = $this->_getHolidaySkipData($_AvalidityData['validities'][$key],$_AinputData['requestMasterID'],4);
+ 				if(!empty($returnmsg))
+ 					break;
+@@ -1645,7 +1601,15 @@
+             $holidayName = $_AHolidayDetails['holidayNames'];
+ 			$_SoriginAirportCode=$this->_Ocommon->_getFirstOrigin($requestMasterId);
+ 			$_ScurrentTime=$this->_Ocommon->_getAirportCodeCurrentTime($_SoriginAirportCode);
+- 
++			if($type == 3){
++				//Calling this function to change payment details index incase of most restrictive
++				$_ArearrangedData=$this->_reassignPaymentDetailsValueArr(array($rowSelectTimeLineMatrix),'N');
++				if(isset($rowSelectTimeLineMatrix['paymentDetails']) && !empty($rowSelectTimeLineMatrix['paymentDetails'])){
++					$rowSelectTimeLineMatrix['paymentDetails']=$_ArearrangedData[0]['paymentDetails'];
++				}
++				if(isset($_ArearrangedData[0]['holiday_paidStatus']) && !empty($_ArearrangedData[0]['holiday_paidStatus']))
++					$rowSelectTimeLineMatrix['holiday_paidStatus']=$_ArearrangedData[0]['holiday_paidStatus'];
++			}
+             //Check Contract validity and auto change validity
+ 				//if(!in_array($type,$this->_AnoFare) || $type != 6 || $type != 5){
+ 				if($type == 1 || $type == 2) {
+@@ -1688,17 +1652,24 @@
+ 				} else {
+ 					$rowSelectTimeLineMatrixfarecontract = $rowSelectTimeLineMatrix;
+ 					$_DfareDate = date("Y-m-d H:i:s");
+-				}	
+-						
+-                    //Payment loop
++				}
++				
++					//Payment loop
+ 					
+                     if($rowSelectTimeLineMatrixfarecontract['payment_expiry_id']!=2)
+                     {
+-                        $_DpaymentDateInner = $this->_getDateFromValidity($rowSelectTimeLineMatrixfarecontract['payment_validity'],$_ApaymentTypeDetails[$rowSelectTimeLineMatrixfarecontract['payment_validity_type_id']],$_DfareDate,1);
+-                        $_checkvalidity['paymentExpiryDate']=$_DpaymentDateInner;
+-                        $rowSelectTimeLineMatrixpaymentcontract = $this->_validityCheckContract($_checkvalidity['paymentExpiryDate'],'payment',$_DholidayDates,$_SnonBusinessDays,$rowSelectTimeLineMatrixfarecontract['dateOfDeparture'],$rowSelectTimeLineMatrixfarecontract,'',$rowSelectTimeLineMatrixfarecontract['payment_expiry_id'],'',$type,$rowSelectTimeLineMatrixfarecontract['payment_validity_type_id']);
+-                        $_DpaymentDate = $this->_getDateFromValidity($rowSelectTimeLineMatrixpaymentcontract['payment_validity'],$_ApaymentTypeDetails[$rowSelectTimeLineMatrixpaymentcontract['payment_validity_type_id']],$_DfareDate,1);
+-						$timetype = $rowSelectTimeLineMatrixpaymentcontract['payment_validity_type_id'];
++						if(!isset($rowSelectTimeLineMatrixfarecontract['holiday_paidStatus'])){
++							$_DpaymentDateInner = $this->_getDateFromValidity($rowSelectTimeLineMatrixfarecontract['payment_validity'],$_ApaymentTypeDetails[$rowSelectTimeLineMatrixfarecontract['payment_validity_type_id']],$_DfareDate,1);
++							$_checkvalidity['paymentExpiryDate']=$_DpaymentDateInner;
++							$rowSelectTimeLineMatrixpaymentcontract = $this->_validityCheckContract($_checkvalidity['paymentExpiryDate'],'payment',$_DholidayDates,$_SnonBusinessDays,$rowSelectTimeLineMatrixfarecontract['dateOfDeparture'],$rowSelectTimeLineMatrixfarecontract,'',$rowSelectTimeLineMatrixfarecontract['payment_expiry_id'],'',$type,$rowSelectTimeLineMatrixfarecontract['payment_validity_type_id']);
++							$_DpaymentDate = $this->_getDateFromValidity($rowSelectTimeLineMatrixpaymentcontract['payment_validity'],$_ApaymentTypeDetails[$rowSelectTimeLineMatrixpaymentcontract['payment_validity_type_id']],$_DfareDate,1);
++							$timetype = $rowSelectTimeLineMatrixpaymentcontract['payment_validity_type_id'];
++						}
++						else{
++							$_DpaymentDate=date("Y-m-d H:i:s");
++							$rowSelectTimeLineMatrixpaymentcontract =$rowSelectTimeLineMatrixfarecontract;
++							$rowSelectTimeLineMatrixpaymentcontract['payment_expiry_date']=$_DpaymentDate;
++						}
+ 						if($type == 1 || $type == 4){
+ 							if($timetype == 5){
+ 								$_validitytype = " Current date";
+@@ -1724,13 +1695,15 @@
+                             foreach($rowSelectTimeLineMatrixpaymentcontract['paymentDetails'] as $pkey=>$paymentExpiryDate)
+                             {
+                                 if($paymentExpiryDate['payment_expiry_id'] != 2){
+-
+-                                $_DpaymentDateInner =$this->_getDateFromValidity($paymentExpiryDate['payment_validity'],$_ApaymentTypeDetails[$paymentExpiryDate['payment_validity_type_id']],$_DpaymentDate,1);
+-                                $_checkvalidity['paymentExpiryDate']=$_DpaymentDateInner;
+-                                $rowSelectTimeLineMatrixpaymentcontract = $this->_validityCheckContract($_checkvalidity['paymentExpiryDate'],'payment',$_DholidayDates,$_SnonBusinessDays,$rowSelectTimeLineMatrixfarecontract['dateOfDeparture'],$rowSelectTimeLineMatrixpaymentcontract,$pkey,$paymentExpiryDate['payment_expiry_id'],'child',$type,$paymentExpiryDate['payment_validity_type_id']);
+-                                $_DpaymentDate = $this->_getDateFromValidity($rowSelectTimeLineMatrixpaymentcontract['paymentDetails'][$pkey]['payment_validity'],$_ApaymentTypeDetails[$rowSelectTimeLineMatrixpaymentcontract['paymentDetails'][$pkey]['payment_validity_type_id']],$_DpaymentDate,1);
+-								$timetype = $rowSelectTimeLineMatrixpaymentcontract['paymentDetails'][$pkey]['payment_validity_type_id'];
+-                                if($type == 1 || $type == 4){
++								if(!isset($paymentExpiryDate['holiday_paidStatus'])){
++									$_DpaymentDateInner =$this->_getDateFromValidity($paymentExpiryDate['payment_validity'],$_ApaymentTypeDetails[$paymentExpiryDate['payment_validity_type_id']],$_DpaymentDate,1);
++									$_checkvalidity['paymentExpiryDate']=$_DpaymentDateInner;
++									$rowSelectTimeLineMatrixpaymentcontract = $this->_validityCheckContract($_checkvalidity['paymentExpiryDate'],'payment',$_DholidayDates,$_SnonBusinessDays,$rowSelectTimeLineMatrixfarecontract['dateOfDeparture'],$rowSelectTimeLineMatrixpaymentcontract,$pkey,$paymentExpiryDate['payment_expiry_id'],'child',$type,$paymentExpiryDate['payment_validity_type_id']);
++									$_DpaymentDate = $this->_getDateFromValidity($rowSelectTimeLineMatrixpaymentcontract['paymentDetails'][$pkey]['payment_validity'],$_ApaymentTypeDetails[$rowSelectTimeLineMatrixpaymentcontract['paymentDetails'][$pkey]['payment_validity_type_id']],$_DpaymentDate,1);
++									$timetype = $rowSelectTimeLineMatrixpaymentcontract['paymentDetails'][$pkey]['payment_validity_type_id'];
++								}
++								
++								if($type == 1 || $type == 4){
+ 									if($timetype == 5){
+ 										$_validitytype = " Current date";
+ 									} else {
+@@ -1747,6 +1720,7 @@
+                                     }
+                                 }                               
+                                 } else {
++									if(!isset($paymentExpiryDate['holiday_paidStatus'])){
+                                     $_DpenaltyDate = date('Y-m-d H:i:s', strtotime($rowSelectTimeLineMatrixfarecontract['dateOfDeparture']));																														
+                                     $_DpaymentDateInner = $this->_getDateFromValidity($paymentExpiryDate['payment_validity'],$_ApaymentTypeDetails[$paymentExpiryDate['payment_validity_type_id']],$_DpenaltyDate,2);
+                                     $_checkvalidity['paymentExpiryDate']=$_DpaymentDateInner;
+@@ -1753,6 +1727,7 @@
+                                     $rowSelectTimeLineMatrixpaymentcontract = $this->_validityCheckContract($_checkvalidity['paymentExpiryDate'],'payment',$_DholidayDates,$_SnonBusinessDays,$rowSelectTimeLineMatrixfarecontract['dateOfDeparture'],$rowSelectTimeLineMatrixpaymentcontract,$pkey,$paymentExpiryDate['payment_expiry_id'],'child',$type,$paymentExpiryDate['payment_validity_type_id']);	
+                                     $_DpaymentDate = $this->_getDateFromValidity($rowSelectTimeLineMatrixpaymentcontract['paymentDetails'][$pkey]['payment_validity'],$_ApaymentTypeDetails[$rowSelectTimeLineMatrixpaymentcontract['paymentDetails'][$pkey]['payment_validity_type_id']], $_DpenaltyDate,2);								
+ 									$timetype = $rowSelectTimeLineMatrixpaymentcontract['paymentDetails'][$pkey]['payment_validity_type_id'];
++									}
+                                     if($type == 1 || $type == 4){
+ 										if($timetype == 5){
+ 											$_validitytype = " Current date";
+@@ -1786,12 +1761,19 @@
+ 						$_DpenaltyDate = date('Y-m-d H:i:s', strtotime($_departureDate));	
+ 						
+                         //$_DpenaltyDate = date('Y-m-d H:i:s', strtotime($rowSelectTimeLineMatrixfarecontract['dateOfDeparture']));
+-                        $_DpaymentDateInner = $this->_getDateFromValidity($rowSelectTimeLineMatrixfarecontract['payment_validity'],$_ApaymentTypeDetails[$rowSelectTimeLineMatrixfarecontract['payment_validity_type_id']],$_DpenaltyDate,2);
++                        if(!isset($rowSelectTimeLineMatrixfarecontract['holiday_paidStatus'])){
++							$_DpaymentDateInner = $this->_getDateFromValidity($rowSelectTimeLineMatrixfarecontract['payment_validity'],$_ApaymentTypeDetails[$rowSelectTimeLineMatrixfarecontract['payment_validity_type_id']],$_DpenaltyDate,2);
+ 
+-                        $_checkvalidity['paymentExpiryDate']=$_DpaymentDateInner;
+-                        $rowSelectTimeLineMatrixpaymentcontract = $this->_validityCheckContract($_checkvalidity['paymentExpiryDate'],'payment',$_DholidayDates,$_SnonBusinessDays,$rowSelectTimeLineMatrixfarecontract['dateOfDeparture'],$rowSelectTimeLineMatrixfarecontract,'',$rowSelectTimeLineMatrixfarecontract['payment_expiry_id'],'',$type,$rowSelectTimeLineMatrixfarecontract['payment_validity_type_id']);
+-                        $_DpaymentDate = $this->_getDateFromValidity($rowSelectTimeLineMatrixpaymentcontract['payment_validity'],$_ApaymentTypeDetails[$rowSelectTimeLineMatrixpaymentcontract['payment_validity_type_id']],$_DpenaltyDate,2);
+-						$timetype = $rowSelectTimeLineMatrixpaymentcontract['payment_validity_type_id'];
++							$_checkvalidity['paymentExpiryDate']=$_DpaymentDateInner;
++							$rowSelectTimeLineMatrixpaymentcontract = $this->_validityCheckContract($_checkvalidity['paymentExpiryDate'],'payment',$_DholidayDates,$_SnonBusinessDays,$rowSelectTimeLineMatrixfarecontract['dateOfDeparture'],$rowSelectTimeLineMatrixfarecontract,'',$rowSelectTimeLineMatrixfarecontract['payment_expiry_id'],'',$type,$rowSelectTimeLineMatrixfarecontract['payment_validity_type_id']);
++							$_DpaymentDate = $this->_getDateFromValidity($rowSelectTimeLineMatrixpaymentcontract['payment_validity'],$_ApaymentTypeDetails[$rowSelectTimeLineMatrixpaymentcontract['payment_validity_type_id']],$_DpenaltyDate,2);
++							$timetype = $rowSelectTimeLineMatrixpaymentcontract['payment_validity_type_id'];
++						}
++						else{
++							$_DpaymentDate=date('Y-m-d H:i:s');
++							$rowSelectTimeLineMatrixpaymentcontract=$rowSelectTimeLineMatrixfarecontract;
++							$rowSelectTimeLineMatrixpaymentcontract['payment_expiry_date']=$_DpaymentDate;
++						}
+                         if($type == 1 || $type == 4){
+ 							if($timetype == 5){
+ 								$_validitytype = " Current date";
+@@ -1818,15 +1800,17 @@
+ 
+                                 if($paymentExpiryDate['payment_expiry_id'] != 2){
+                                     //$_DfareDate = $this->_getDateFromValidity($rowSelectTimeLineMatrixpaymentcontract['fare_validity'],$_ApaymentTypeDetails[$rowSelectTimeLineMatrixpaymentcontract['fare_validity_type_id']],$_ScurrentTime,1);
+-									$_DfareDate = $_DfareDate;
+-                                    $_DpaymentDateInner = $this->_getDateFromValidity($paymentExpiryDate['payment_validity'],$_ApaymentTypeDetails[$paymentExpiryDate['payment_validity_type_id']],$_DpaymentDate,1);
+-                                    $_checkvalidity['paymentExpiryDate']=$_DpaymentDateInner;
+-                                    $rowSelectTimeLineMatrixpaymentcontract = $this->_validityCheckContract($_checkvalidity['paymentExpiryDate'],'payment',$_DholidayDates,$_SnonBusinessDays,$rowSelectTimeLineMatrixfarecontract['dateOfDeparture'],$rowSelectTimeLineMatrixpaymentcontract,$pkey,$paymentExpiryDate['payment_expiry_id'],'child',$type,$paymentExpiryDate['payment_validity_type_id']);
+-									
+-									
+-                                    $_DpaymentDate = $this->_getDateFromValidity($rowSelectTimeLineMatrixpaymentcontract['paymentDetails'][$pkey]['payment_validity'],$_ApaymentTypeDetails[$rowSelectTimeLineMatrixpaymentcontract['paymentDetails'][$pkey]['payment_validity_type_id']],$_DpaymentDate,1);
++									if(!isset($paymentExpiryDate['holiday_paidStatus'])){
++										$_DfareDate = $_DfareDate;
++										$_DpaymentDateInner = $this->_getDateFromValidity($paymentExpiryDate['payment_validity'],$_ApaymentTypeDetails[$paymentExpiryDate['payment_validity_type_id']],$_DpaymentDate,1);
++										$_checkvalidity['paymentExpiryDate']=$_DpaymentDateInner;
++										$rowSelectTimeLineMatrixpaymentcontract = $this->_validityCheckContract($_checkvalidity['paymentExpiryDate'],'payment',$_DholidayDates,$_SnonBusinessDays,$rowSelectTimeLineMatrixfarecontract['dateOfDeparture'],$rowSelectTimeLineMatrixpaymentcontract,$pkey,$paymentExpiryDate['payment_expiry_id'],'child',$type,$paymentExpiryDate['payment_validity_type_id']);
++										
++										
++										$_DpaymentDate = $this->_getDateFromValidity($rowSelectTimeLineMatrixpaymentcontract['paymentDetails'][$pkey]['payment_validity'],$_ApaymentTypeDetails[$rowSelectTimeLineMatrixpaymentcontract['paymentDetails'][$pkey]['payment_validity_type_id']],$_DpaymentDate,1);
+ 
+-									$timetype = $rowSelectTimeLineMatrixpaymentcontract['paymentDetails'][$pkey]['payment_validity_type_id'];
++										$timetype = $rowSelectTimeLineMatrixpaymentcontract['paymentDetails'][$pkey]['payment_validity_type_id'];
++									}
+                                     if($type == 1 || $type == 4) {
+ 										if($timetype == 5){
+ 											$_validitytype = " Current date";
+@@ -1852,11 +1836,12 @@
+ 									$_DpaymentDateInner = $this->_getDateFromValidity($paymentExpiryDate['payment_validity'],$_ApaymentTypeDetails[$paymentExpiryDate['payment_validity_type_id']],$_DpenaltyDate,2);
+ 									
+                                     //$_DpaymentDateInner = $this->_getDateFromValidity($paymentExpiryDate['payment_validity'],$_ApaymentTypeDetails[$paymentExpiryDate['payment_validity_type_id']],$_DpaymentDate,2);
+-                                    $_checkvalidity['paymentExpiryDate']=$_DpaymentDateInner;
+-                                    $rowSelectTimeLineMatrixpaymentcontract = $this->_validityCheckContract($_checkvalidity['paymentExpiryDate'],'payment',$_DholidayDates,$_SnonBusinessDays,$rowSelectTimeLineMatrixfarecontract['dateOfDeparture'],$rowSelectTimeLineMatrixpaymentcontract,$pkey,$paymentExpiryDate['payment_expiry_id'],'child',$type,$paymentExpiryDate['payment_validity_type_id']);									
+-									$timetype = $rowSelectTimeLineMatrixpaymentcontract['paymentDetails'][$pkey]['payment_validity_type_id'];
+-                                    $_DpaymentDate = $this->_getDateFromValidity($rowSelectTimeLineMatrixpaymentcontract['paymentDetails'][$pkey]['payment_validity'],$_ApaymentTypeDetails[$rowSelectTimeLineMatrixpaymentcontract['paymentDetails'][$pkey]['payment_validity_type_id']],$_DpenaltyDate,2);
+-									
++                                    if(!isset($paymentExpiryDate['holiday_paidStatus'])){
++										$_checkvalidity['paymentExpiryDate']=$_DpaymentDateInner;
++										$rowSelectTimeLineMatrixpaymentcontract = $this->_validityCheckContract($_checkvalidity['paymentExpiryDate'],'payment',$_DholidayDates,$_SnonBusinessDays,$rowSelectTimeLineMatrixfarecontract['dateOfDeparture'],$rowSelectTimeLineMatrixpaymentcontract,$pkey,$paymentExpiryDate['payment_expiry_id'],'child',$type,$paymentExpiryDate['payment_validity_type_id']);									
++										$timetype = $rowSelectTimeLineMatrixpaymentcontract['paymentDetails'][$pkey]['payment_validity_type_id'];
++										$_DpaymentDate = $this->_getDateFromValidity($rowSelectTimeLineMatrixpaymentcontract['paymentDetails'][$pkey]['payment_validity'],$_ApaymentTypeDetails[$rowSelectTimeLineMatrixpaymentcontract['paymentDetails'][$pkey]['payment_validity_type_id']],$_DpenaltyDate,2);
++									}
+                                     if($type == 1 || $type == 4){
+ 										if($timetype == 5){
+ 											$_validitytype = " Current date";
+@@ -2426,8 +2411,11 @@
+ 		$checkbetweendates = array();
+ 		fileWrite($_IinputDataValues.'-'.$_SvaldityName,'inputholiday','a+');
+ 		//If validity set in hours the holiday logic should be skipped Worked for WN
+-		if(!empty($CFG["timelineExtenstion"]["paymentExpiryTimezone"]) && !empty($CFG["timelineExtenstion"]["paymentExpiryTime"]) && $timetype == '5')
++		if(!empty($CFG["timelineExtenstion"]["paymentExpiryTimezone"]) && !empty($CFG["timelineExtenstion"]["paymentExpiryTime"]) && $timetype == '5'){
++			if(!isset($rowSelectTimeLineMatrix['payment_expiry_date']))
++				$rowSelectTimeLineMatrix['payment_expiry_date']=$rowSelectTimeLineMatrix['payment_expiry_date'] ?? $rowSelectTimeLineMatrix['paymentExpiryDate'];
+ 			return $rowSelectTimeLineMatrix;
++		}
+ 		//if(date("Y-m-d",strtotime($_IinputDataValues)) != date("Y-m-d",strtotime($daystodeparture))) 
+ 		if(date("Y-m-d") != date("Y-m-d",strtotime($daystodeparture))) 
+         {
+@@ -2632,32 +2620,51 @@
+ 							fileWrite($_DcurrentDate,'firstpaycurrent','a+');
+ 						} else if($_SvaldityName == 'payment' && is_numeric($pkey)) {
+ 							$paykeycount = count($rowSelectTimeLineMatrix['paymentDetails']);
+-							if($rowSelectTimeLineMatrix['payment_expiry_id']== 2){
+-								$paymentdate = $this->_getDateFromValidity($rowSelectTimeLineMatrix['payment_validity'],$_ApaymentTypeDetails[$rowSelectTimeLineMatrix['payment_validity_type_id']],$departuredate,2);
+-							} else {
+-								$paymentdate = $this->_getDateFromValidity($rowSelectTimeLineMatrix['payment_validity'],$_ApaymentTypeDetails[$rowSelectTimeLineMatrix['payment_validity_type_id']],$faredate,1);
+-							} 							
++							if(!isset($rowSelectTimeLineMatrix['holiday_paidStatus'])){
++								if($rowSelectTimeLineMatrix['payment_expiry_id']== 2){
++									$paymentdate = $this->_getDateFromValidity($rowSelectTimeLineMatrix['payment_validity'],$_ApaymentTypeDetails[$rowSelectTimeLineMatrix['payment_validity_type_id']],$departuredate,2);
++								} else {
++									$paymentdate = $this->_getDateFromValidity($rowSelectTimeLineMatrix['payment_validity'],$_ApaymentTypeDetails[$rowSelectTimeLineMatrix['payment_validity_type_id']],$faredate,1);
++								} 	
++							}
++							else{
++								$paymentdate=date('Y-m-d H:i:s');
++							}		
+ 							if($paykeycount > 1) {
+ 								if($pkey != 0){
+-									if($rowSelectTimeLineMatrix['paymentDetails'][$paykeycount-2]['payment_expiry_id'] == 2) {
+-										$paymentdate = $this->_getDateFromValidity($rowSelectTimeLineMatrix['paymentDetails'][$paykeycount-2]['payment_validity'],$_ApaymentTypeDetails[$rowSelectTimeLineMatrix['paymentDetails'][$paykeycount-2]['payment_validity_type_id']], $departuredate,2);
+-									} else {
+-										$paymentdate = $this->_getDateFromValidity($rowSelectTimeLineMatrix['paymentDetails'][$paykeycount-2]['payment_validity'],$_ApaymentTypeDetails[$rowSelectTimeLineMatrix['paymentDetails'][$paykeycount-2]['payment_validity_type_id']], $paymentdate,1);
++									if(!isset($rowSelectTimeLineMatrix['paymentDetails'][$paykeycount-2]['holiday_paidStatus'])){
++										if($rowSelectTimeLineMatrix['paymentDetails'][$paykeycount-2]['payment_expiry_id'] == 2) {
++											$paymentdate = $this->_getDateFromValidity($rowSelectTimeLineMatrix['paymentDetails'][$paykeycount-2]['payment_validity'],$_ApaymentTypeDetails[$rowSelectTimeLineMatrix['paymentDetails'][$paykeycount-2]['payment_validity_type_id']], $departuredate,2);
++										} else {
++											$paymentdate = $this->_getDateFromValidity($rowSelectTimeLineMatrix['paymentDetails'][$paykeycount-2]['payment_validity'],$_ApaymentTypeDetails[$rowSelectTimeLineMatrix['paymentDetails'][$paykeycount-2]['payment_validity_type_id']], $paymentdate,1);
++										}
++									}
++									else{
++										$paymentdate=date('Y-m-d H:i:s');
+ 									}									
+ 								} else {
++									if(!isset($rowSelectTimeLineMatrix['holiday_paidStatus'])){
++										if($rowSelectTimeLineMatrix['payment_expiry_id'] == 2) {
++											$paymentdate = $this->_getDateFromValidity($rowSelectTimeLineMatrix['payment_validity'],$_ApaymentTypeDetails[$rowSelectTimeLineMatrix['payment_validity_type_id']], $departuredate,2);
++										} else {
++											$paymentdate = $this->_getDateFromValidity($rowSelectTimeLineMatrix['payment_validity'],$_ApaymentTypeDetails[$rowSelectTimeLineMatrix['payment_validity_type_id']], $faredate,1);
++										}	
++									}
++									else{
++										$paymentdate=date('Y-m-d H:i:s');
++									}	
++								}
++							} else { 
++								if(!isset($rowSelectTimeLineMatrix['holiday_paidStatus'])){
+ 									if($rowSelectTimeLineMatrix['payment_expiry_id'] == 2) {
+ 										$paymentdate = $this->_getDateFromValidity($rowSelectTimeLineMatrix['payment_validity'],$_ApaymentTypeDetails[$rowSelectTimeLineMatrix['payment_validity_type_id']], $departuredate,2);
+ 									} else {
+ 										$paymentdate = $this->_getDateFromValidity($rowSelectTimeLineMatrix['payment_validity'],$_ApaymentTypeDetails[$rowSelectTimeLineMatrix['payment_validity_type_id']], $faredate,1);
+-									}	
++									}								
+ 								}
+-							} else { 
+-								if($rowSelectTimeLineMatrix['payment_expiry_id'] == 2) {
+-									$paymentdate = $this->_getDateFromValidity($rowSelectTimeLineMatrix['payment_validity'],$_ApaymentTypeDetails[$rowSelectTimeLineMatrix['payment_validity_type_id']], $departuredate,2);
+-								} else {
+-									$paymentdate = $this->_getDateFromValidity($rowSelectTimeLineMatrix['payment_validity'],$_ApaymentTypeDetails[$rowSelectTimeLineMatrix['payment_validity_type_id']], $faredate,1);
+-								}								
+-								
++								else{
++									$paymentdate=date('Y-m-d H:i:s');
++								}	
+ 							}
+ 							$_DcurrentDate = $paymentdate;
+ 
+@@ -2993,8 +3000,10 @@
+ 		}
+ 		else
+ 			$_SoriginTimeZone = $this->_SoriginTimeZone;
++		
++		$_SpaidStatus=isset($_rowTimelineMatrix['holiday_paidStatus']) && strtoupper($_rowTimelineMatrix['holiday_paidStatus'])=='PAID' ? 'Y' :'N';
+ 		# Payment expiry date
+-		if(isset($_rowTimelineMatrix['paymentExpiryDate']) && !empty($_rowTimelineMatrix['payment_validity_type_id']) && $_rowTimelineMatrix['payment_validity_type_id'] != 5) {
++		if(isset($_rowTimelineMatrix['paymentExpiryDate']) && !empty($_rowTimelineMatrix['payment_validity_type_id']) && $_rowTimelineMatrix['payment_validity_type_id'] != 5 && $_SpaidStatus=='N') {
+ 			$_rowTimelineMatrix["payment_expiry_time_zone"]=$_rowTimelineMatrix["payment_expiry_time_zone"]??$_AgroupContractDetailsTimeLine["payment_expiry_time_zone"];
+ 			$_rowTimelineMatrix["payment_expiry_time"]=$_rowTimelineMatrix["payment_expiry_time"]??$_AgroupContractDetailsTimeLine["payment_expiry_time"];
+ 			if($_rowTimelineMatrix['payment_expiry_type'] == 2)
+@@ -3002,7 +3011,7 @@
+ 			$_rowTimelineMatrix['paymentExpiryDate'] = $_OprocessRequest->_getDateTimeBasedOnTimezone($_rowTimelineMatrix['paymentExpiryDate'],$_rowTimelineMatrix["payment_expiry_time"],$_rowTimelineMatrix['payment_expiry_time_zone']);
+ 		}
+ 		
+-		if(isset($_rowTimelineMatrix['payment_expiry_date']) && !empty($_rowTimelineMatrix['payment_validity_type_id']) && $_rowTimelineMatrix['payment_validity_type_id'] != 5) {	
++		if(isset($_rowTimelineMatrix['payment_expiry_date']) && !empty($_rowTimelineMatrix['payment_validity_type_id']) && $_rowTimelineMatrix['payment_validity_type_id'] != 5 && $_SpaidStatus=='N') {	
+ 			$_rowTimelineMatrix["payment_expiry_time_zone"]=$_rowTimelineMatrix["payment_expiry_time_zone"]?? $_AgroupContractDetailsTimeLine["payment_expiry_time_zone"];
+ 			$_rowTimelineMatrix["payment_expiry_time"]=$_rowTimelineMatrix["payment_expiry_time"]??$_AgroupContractDetailsTimeLine["payment_expiry_time"];
+ 			if($_rowTimelineMatrix['payment_expiry_type'] == 2)
+@@ -3012,8 +3021,8 @@
+ 
+ 		# Payment expiry date of payment details
+ 		foreach($_rowTimelineMatrix['paymentDetails'] as $_IrowKey => $_ArowValue){
+-
+-			if($_rowTimelineMatrix['paymentDetails'][$_IrowKey]['payment_validity_type_id'] != 5) {	
++			$_SpaidStatus=isset($rowValue['holiday_paidStatus']) && strtoupper($rowValue['holiday_paidStatus'])=='PAID' ? 'Y' :'N';
++			if($_rowTimelineMatrix['paymentDetails'][$_IrowKey]['payment_validity_type_id'] != 5 && $_SpaidStatus=='N') {	
+ 				$_rowTimelineMatrix['paymentDetails'][$_IrowKey]["payment_expiry_time_zone"]=$_ArowValue["payment_expiry_time_zone"]??$_AgroupContractDetailsTimeLine['paymentDetails'][$_IrowKey]["payment_expiry_time_zone"];
+ 				$_rowTimelineMatrix['paymentDetails'][$_IrowKey]["payment_expiry_time"]=$_ArowValue["payment_expiry_time"]??$_AgroupContractDetailsTimeLine['paymentDetails'][$_IrowKey]["payment_expiry_time"];
+ 				if($_rowTimelineMatrix['paymentDetails'][$_IrowKey]['payment_expiry_id'] == 2)
+@@ -3033,8 +3042,8 @@
+ 			$_rowTimelineMatrix['paymentRequestDetails'][$rowKey]["payment_expiry_time_zone"]=$rowValue["payment_expiry_time_zone"]??$_rowTimelineMatrix['paymentDetails'][$rowKey-1]["payment_expiry_time_zone"];
+ 			$_rowTimelineMatrix['paymentRequestDetails'][$rowKey]["payment_expiry_time"]=$rowValue["payment_expiry_time"]??$_rowTimelineMatrix['paymentDetails'][$rowKey-1]["payment_expiry_time"];
+ 			}
+-
+-			if($rowValue['payment_validity_type'] != 5)
++			$_SpaidStatus=isset($rowValue['splitPaidStatus']) && strtoupper($rowValue['splitPaidStatus'])=='PAID' ? 'Y' :'N';
++			if($rowValue['payment_validity_type'] != 5 && $_SpaidStatus=='N')
+ 			{	
+ 				$_AreturnDate = explode(" ",$rowValue['paymentExpiryDate']);
+ 
+@@ -3044,10 +3053,10 @@
+ 				if($rowKey == 0 && !empty($_rowTimelineMatrix['payment_expiry_date']))
+ 					$_rowTimelineMatrix['payment_expiry_date'] =  $_OprocessRequest->_getDateTimeBasedOnTimezone($_rowTimelineMatrix['payment_expiry_date'],$_rowTimelineMatrix["payment_expiry_time"],$_rowTimelineMatrix['payment_expiry_time_zone']);	
+ 			}
+-			if($rowKey > 0 && $rowValue['payment_validity_type'] == 5 && $_rowTimelineMatrix['paymentRequestDetails'][$rowKey-1]['payment_validity_type'] != 5) 
+-			{
+-				$_rowTimelineMatrix['paymentRequestDetails'][$rowKey]['paymentExpiryDate'] =$_OprocessRequest->_getDateTimeBasedOnTimezone($_rowTimelineMatrix['paymentRequestDetails'][$rowKey]['payment_expiry_date'],$_rowTimelineMatrix['paymentRequestDetails'][$rowKey]["payment_expiry_time"],$_rowTimelineMatrix['paymentRequestDetails'][$rowKey]["payment_expiry_time_zone"]);
+-			}
++			// if($rowKey > 0 && $rowValue['payment_validity_type'] == 5 && $_rowTimelineMatrix['paymentRequestDetails'][$rowKey-1]['payment_validity_type'] != 5) 
++			// {
++			// 	$_rowTimelineMatrix['paymentRequestDetails'][$rowKey]['paymentExpiryDate'] =$_OprocessRequest->_getDateTimeBasedOnTimezone($_rowTimelineMatrix['paymentRequestDetails'][$rowKey]['paymentExpiryDate'],$_rowTimelineMatrix['paymentRequestDetails'][$rowKey]["payment_expiry_time"],$_rowTimelineMatrix['paymentRequestDetails'][$rowKey]["payment_expiry_time_zone"]);
++			// }
+ 		}
+ 		return $_rowTimelineMatrix;	
+ 	}	
+@@ -3104,6 +3113,82 @@
+ 		else
+ 			return true;
+ 	}
++	/*
++	 * Author 		: Manikandan S
++	 * Date 		: 2024-08-01
++	 * Description	: To reconstruct paymentDetails array based on the paymentRequestDetails array
++	*/
++	public function _reassignPaymentDetailsValueArr($_AvalidityData,$extensionKey='Y')
++	{
++		foreach($_AvalidityData as $key => $_Aval) {
++			$timelinekey = $key;
++			//Adding this to set the paid status
++			if($extensionKey=='N' && isset($_Aval['paymentRequestDetails']) && !empty($_Aval['paymentRequestDetails'])){
++				$_AstatusDetails=array_column($_Aval['paymentRequestDetails'],'splitPaidStatus');
++				if($_AstatusDetails){
++					$_AstatusArray=array_keys($_AstatusDetails,'PAID');
++					foreach($_AstatusArray as $S_statusVal){
++						if($S_statusVal == 0){
++							$_AvalidityData[$key]['holiday_paidStatus']='PAID';
++						}
++						elseif($S_statusVal > 0){
++							$_AvalidityData[$key]['paymentDetails'][$S_statusVal-1]['holiday_paidStatus']='PAID';
++						}
++					}
++				}
++			}
++			unset($_Aval['paymentRequestDetails'][0]);
++			foreach($_Aval['paymentRequestDetails'] as $paykey => $payval) {
++				$_AvalidityData[$key]['paymentDetails'][$paykey-1]['payment_validity'] =  $_Aval['paymentRequestDetails'][ $paykey]['payment_validity'];
++				$_AvalidityData[$key]['paymentDetails'][$paykey-1]['payment_validity_type_id'] = $_Aval['paymentRequestDetails'][ $paykey]['payment_validity_type'];
++				$_AvalidityData[$key]['paymentDetails'][$paykey-1]['payment_expiry_id'] = $_Aval['paymentRequestDetails'][ $paykey]['payment_expiry_type'];
++				$_AvalidityData[$key]['paymentDetails'][$paykey-1]['payment_expiry_date'] = $_Aval['paymentRequestDetails'][ $paykey]['paymentExpiryDate'];
++				$_AvalidityData[$key]['paymentDetails'][$paykey-1]['payment_expiry_time'] = $_Aval['paymentRequestDetails'][ $paykey]['payment_expiry_time'];
++				$_AvalidityData[$key]['paymentDetails'][$paykey-1]['payment_expiry_time_zone'] = $_Aval['paymentRequestDetails'][ $paykey]['payment_expiry_time_zone'];				
++				unset($_AvalidityData[$key]['paymentDetails'][$paykey-1]['payment_validity_type']);
++				if($_Aval['paymentRequestDetails'][ $paykey]['payment_expiry_type'] != 2) {
++					if($_Aval['paymentRequestDetails'][ $paykey]['payment_expiry_type'] == 4)
++						$_AvalidityData[$key]['paymentDetails'][$paykey-1]['payment_expiry'] = "User action date"; 
++					else 
++						$_AvalidityData[$key]['paymentDetails'][$paykey-1]['payment_expiry'] = "Current date";
++				} else {
++					$_AvalidityData[$key]['paymentDetails'][$paykey-1]['payment_expiry'] = "Date of departure";
++				}
++			}
++			if($_Aval['passengerValidityExtension'] != 'N') {
++				$_AvalidityData[$key]['name_list_validity']	= $_Aval['passenger_validity'];
++				$_AvalidityData[$key]['name_list_validity_type_id']	= $_Aval['passenger_type_id'];
++				$_AvalidityData[$key]['name_list_expiry_id']	= $_Aval['passenger_expiry_type_id'];
++				if($extensionKey=='Y'){
++					if($_Aval['passenger_expiry_type_id'] != 2){
++						if($_Aval['passenger_expiry_type_id'] == 4)
++							$_AvalidityData[$key]['name_list_expiry']	= "User action date";
++						else 
++							$_AvalidityData[$key]['name_list_expiry']	= "Current date";
++					} else {
++						$_AvalidityData[$key]['name_list_expiry']	= "Date of departure";
++					}
++				}
++			}
++
++			$_AvalidityData[$key]['payment_validity']	= $_Aval['payment_validity'];
++			$_AvalidityData[$key]['payment_validity_type_id']	= $_Aval['payment_validity_type'];
++			$_AvalidityData[$key]['payment_expiry_id']	= $_Aval['payment_expiry_type'];
++			$_AvalidityData[$key]['dateOfDeparture'] = date('Y-m-d H:i:s', strtotime($_Aval['depatureDate']));
++			if($extensionKey=='Y'){
++				if($_Aval['payment_expiry_type'] != 2) {
++					if($_Aval['payment_expiry_type'] == 4)
++					$_AvalidityData[$key]['payment_expiry'] = "User Action date";
++					else 
++						$_AvalidityData[$key]['payment_expiry'] = "Current date";
++				} else {
++					$_AvalidityData[$key]['payment_expiry'] = "Date of departure";
++				}
++			}
++			$_AvalidityData[$key]['payment_expiry_date'] = $_AvalidityData['payment_expiry_date'] ?? $_Aval['paymentExpiryDate'];
++			return $_AvalidityData;
++		}
++	}
+ }
+ 
+ ?>
+Index: classesModule/class.module.menuV1.php
+===================================================================
+--- classesModule/class.module.menuV1.php	(revision 50609)
++++ classesModule/class.module.menuV1.php	(revision 50610)
+@@ -49,6 +49,8 @@
+ 				$_OdeepLinkObj->_setSmarty($this->_Osmarty);
+ 				$_OdeepLinkObj->_setCommonObjConnection();
+ 				$_OdeepLinkObj->_setObjResponse($this->_OobjResponse);
++				if($this->_OobjResponse)
++					$_OdeepLinkObj->_OmenuObj = $this;
+ 				// redirecting to target module with default page.
+ 				$_OdeepLinkObj->_redirectToTargetModule(false, true);
+ 			}
+Index: classesModule/class.module.adhocGetQuoteRequest.php
+===================================================================
+--- classesModule/class.module.adhocGetQuoteRequest.php	(revision 50609)
++++ classesModule/class.module.adhocGetQuoteRequest.php	(revision 50610)
+@@ -106,13 +106,16 @@
+ 			}
+ 		}
+ 		// This is need change while modify - KaruppasamyS
+-		if((isset($this->_IinputData['instantDateChange']) && $this->_IinputData['instantDateChange']=='Y') || $this->_IinputData['moduleName'] == 'modifyInstantQuote')
+-			$this->_IinputData['modifyRequestStatus']='Y';
++		
+ 		if(isset($this->_IinputData['cloneRequestMasterId']) && $this->_IinputData['cloneRequestMasterId']!='')
+ 		{
+ 			$this->_IinputData['modifyRequestStatus']='N';
+-			unset($this->_IinputData['moduleName']);
++			$this->_IinputData['moduleName'] = 'adhocGetQuoteRequest';
++			// unset($this->_IinputData['moduleName']);
+ 		}
++		if((isset($this->_IinputData['instantDateChange']) && $this->_IinputData['instantDateChange']=='Y') || $this->_IinputData['moduleName'] == 'modifyInstantQuote' || $this->_IinputData['chaneIternaryforClone'] == 'Y')
++			$this->_IinputData['modifyRequestStatus']='Y';
++	
+ 		if(!isset($this->_IinputData['responseType']))
+ 		{
+ 			if(isset($this->_IinputData['modifyRequestStatus']) && $this->_IinputData['modifyRequestStatus']!='Y')
+Index: classesModule/class.module.submitTigerPaymentRequest.php
+===================================================================
+--- classesModule/class.module.submitTigerPaymentRequest.php	(revision 50609)
++++ classesModule/class.module.submitTigerPaymentRequest.php	(revision 50610)
+@@ -394,6 +394,7 @@
+ 		{
+ 			return $this->_OobjResponse->script("if(Ext.getCmp('airlinePaymentWindow'))Ext.getCmp('airlinePaymentWindow').close();if(Ext.Msg.isVisible()==false)Ext.Msg.alert('Error','Payment details not found');");
+ 		}*/
++		$this->_OobjResponse->script('HideContentLoader();');
+ 	}
+ }
+ ?>
+Index: language/en_language/en_validation.conf
+===================================================================
+--- language/en_language/en_validation.conf	(revision 50609)
++++ language/en_language/en_validation.conf	(revision 50610)
+@@ -1556,18 +1556,20 @@
+ VALIDATION_SUBMITTIGERPASSENGERDETAILS_MOBILE_NO_MINLENGTH="Mobile number of passenger %S is not allowed to be lesser than %D digits "
+ 
+ #dependency field validation alert msgs
+-VALIDATION_SUBMITTIGERPASSENGERDETAILS_ALL_VALIDATION_VISANUMBER_EMPTY="Please enter the relevant visa fields for passenger number %S  "
+-VALIDATION_SUBMITTIGERPASSENGERDETAILS_ALL_VALIDATION_KT_EMPTY="Please enter the relevant known traveler fields for passenger number  %S"
+-VALIDATION_SUBMITTIGERPASSENGERDETAILS_ALL_VALIDATION_ADDRESS_EMPTY="Please enter the relevant address fields for passenger number %S"
+-VALIDATION_SUBMITTIGERPASSENGERDETAILS_ALL_VALIDATION_PASSPORT_EMPTY="Please enter the relevant passport fields for passenger number %S"
++VALIDATION_SUBMITTIGERPASSENGERDETAILS_ALL_VALIDATION_VISANUMBER_EMPTY="Please enter the missing visa field(s) for passenger number %S"
++VALIDATION_SUBMITTIGERPASSENGERDETAILS_ALL_VALIDATION_KT_EMPTY="Please enter the missing known traveler field(s) for passenger number %S"
++VALIDATION_SUBMITTIGERPASSENGERDETAILS_ALL_VALIDATION_ADDRESS_EMPTY="Please enter the missing address field(s) for passenger number %S"
++VALIDATION_SUBMITTIGERPASSENGERDETAILS_ALL_VALIDATION_PASSPORT_EMPTY="Please enter the missing passport field(s) for passenger number %S"
+ 
+-COMMON_TEMPLATE_NAME_DEPENDENCYFIELD_MISSING="Oops! It looks like %COUNT  missing. Please select %FIELD to proceed. Below mentioned missing field(s):"
+-COMMON_TEMPLATE_NAME_ONE_DEPENDENT_FILED="one dependent field is"
+-COMMON_TEMPLATE_NAME_MORE_DEPENDENT_FILEDS="one or more dependent fields are"
+-VALIDATION_SUBMITTIGERPASSENGERDETAILS_EDIT_ALL_VALIDATION_VISANUMBER_EMPTY="Please enter the relevant visa fields"
+-VALIDATION_SUBMITTIGERPASSENGERDETAILS_EDIT_ALL_VALIDATION_KT_EMPTY="Please enter the relevant known traveler fields"
+-VALIDATION_SUBMITTIGERPASSENGERDETAILS_EDIT_ALL_VALIDATION_ADDRESS_EMPTY="Please enter the relevant address fields"
+-VALIDATION_SUBMITTIGERPASSENGERDETAILS_EDIT_ALL_VALIDATION_PASSPORT_EMPTY="Please enter the relevant passport fields"
++# COMMON_TEMPLATE_NAME_DEPENDENCYFIELD_MISSING="Oops! It looks like %COUNT  missing. Please select %FIELD to proceed. Below mentioned missing field(s):"
++# COMMON_TEMPLATE_NAME_ONE_DEPENDENT_FILED="one dependent field is"
++# COMMON_TEMPLATE_NAME_MORE_DEPENDENT_FILEDS="one or more dependent fields are"
++
++COMMON_TEMPLATE_NAME_DEPENDENCYFIELD_MISSING="One or more dependent fields is missing. Please fill out the missing information listed below in the name template and reupload"
++VALIDATION_SUBMITTIGERPASSENGERDETAILS_EDIT_ALL_VALIDATION_VISANUMBER_EMPTY="Please enter the missing visa field(s)"
++VALIDATION_SUBMITTIGERPASSENGERDETAILS_EDIT_ALL_VALIDATION_KT_EMPTY="Please enter the missing known traveler field(s)"
++VALIDATION_SUBMITTIGERPASSENGERDETAILS_EDIT_ALL_VALIDATION_ADDRESS_EMPTY="Please enter the missing address field(s)"
++VALIDATION_SUBMITTIGERPASSENGERDETAILS_EDIT_ALL_VALIDATION_PASSPORT_EMPTY="Please enter the missing passport field(s)"
+ #Visa number validation messages
+ VALIDATION_SUBMITTIGERPASSENGERDETAILS_VISA_NO_ALREADY_EXISTS="Visa number for passenger %S is already exist with passenger %D "
+ VALIDATION_SUBMITTIGERPASSENGERDETAILS_VISA_NO_ALREADY_SUBMITTED="Visa number of passenger %S is already submitted (Refer submitted passenger %D)"
+Index: database/WN_database.sql
+===================================================================
+--- database/WN_database.sql	(revision 50609)
++++ database/WN_database.sql	(revision 50610)
+@@ -2292,4 +2292,9 @@
+ UPDATE system_settings SET key_value='7' WHERE key_name='minNameUpdateMobileNo' LIMIT 1;
+ UPDATE system_settings SET key_value='15' WHERE key_name='maxNameUpdateMobileNo' LIMIT 1;
+ /*Sathish Kumar  S 30-07-2024 Updating min  Mobile number */
+-UPDATE system_settings SET key_value = 7 WHERE key_index= 'limit' AND key_name = 'minMobileNo' LIMIT 1;
+\ No newline at end of file
++UPDATE system_settings SET key_value = 7 WHERE key_index= 'limit' AND key_name = 'minMobileNo' LIMIT 1;
++
++/*Naveen Kumar B (01-08-2024) Added configuration as mergeThroughFlights to skip the via flight number when checking the seatsAvailability*/
++UPDATE system_settings SET key_value = '{"minStops":"N","mergeViaFlights":"Y","mergeViaFlightsIssueTicket":"N","checkViaFlights":"Y","mergeThroughFlights":"Y"}' WHERE key_index = 'limit' AND key_name = 'controlViaFlights' LIMIT 1;
++/*Sathish S (01-08-2024) to restrict after modify to fetch contract*/
++UPDATE system_settings SET key_value='{"status":"Y","modifyStatus":"N"}'WHERE key_index = 'site' and key_name = 'requestPolicy'  limit 1;
+\ No newline at end of file
+
+Property changes on: database/WN_database.sql
+___________________________________________________________________
+Modified: svn:mergeinfo
+## -0,0 +0,1 ##
+   Merged /branches/dev/WNDevSprint2/database/WN_database.sql:r50543,50607
+Index: SSO/oauthSSO.php
+===================================================================
+--- SSO/oauthSSO.php	(revision 50609)
++++ SSO/oauthSSO.php	(revision 50610)
+@@ -90,6 +90,9 @@
+ 
+             $_SESSION['groupRM']['defaultQueryParam'] = $this->_AoauthConfig['urlQueryconfig']['grmAccess'][0];
+ 
++            #Unset deeplink session while login with grmAccess
++            unset($_SESSION['groupRM']['deepLink']);
++
+             #Remove the cookie on direct login to avoid SSO logout.
+             $this->_setCookie('sso_group', $_SESSION['groupRM']['Oauth']['group'], time() - 3600);
+         }
+Index: smarty/templates/createPassengerTemplateExtJs.tpl
+===================================================================
+--- smarty/templates/createPassengerTemplateExtJs.tpl	(revision 50609)
++++ smarty/templates/createPassengerTemplateExtJs.tpl	(revision 50610)
+@@ -598,7 +598,7 @@
+ 							return false;
+ 						}
+ 					{/literal}{/if}{literal}
+-
++					var doubleQuote='"';
+ 					//Visa number
+ 					if(typeof(Ext.getCmp('visaNumber_container')) != 'undefined' || typeof(Ext.getCmp('visaPlaceOfIssue_container')) != 'undefined' || typeof(Ext.getCmp('visaCountry_container')) != 'undefined' || typeof(Ext.getCmp('visaIssueDate_container')) != 'undefined')
+ 					{
+@@ -606,27 +606,28 @@
+ 						{
+ 							var AvisaDetails = [];
+ 							var errorAlert='';
+-							var count=0;
++							// var count=0;
+ 							AvisaDetails = {/literal}{$objPassengerTemplate->_AvisaDetails|@json_encode}{literal};
+-							var AvisaDetailsData=AvisaDetails.toLocaleString().toLowerCase().split(','); 
++							// var AvisaDetailsData=AvisaDetails.toLocaleString().toLowerCase().split(','); 
+ 							for(i=0;i<AvisaDetails.length;i++)
+ 							{
+ 								if(!Ext.getCmp(AvisaDetails[i]+'_container'))
+ 								{
+-									errorAlert+="<br> - "+AvisaDetails[i];
++									errorAlert+="<br>\u2022"+AvisaDetails[i];
+ 									count++;
+ 								}
+ 							}
+ 							var visaFieldsMsg=globalLanguageVar['COMMON_TEMPLATE_NAME_DEPENDENCYFIELD_MISSING'];
+-							visaFieldsMsg = visaFieldsMsg.replace("%FIELD",AvisaDetailsData);
++							// visaFieldsMsg = visaFieldsMsg.replace("%FIELD",AvisaDetailsData);
+ 
+-							if(count>1)
+-								visaFieldsMsg = visaFieldsMsg.replace("%COUNT",globalLanguageVar['COMMON_TEMPLATE_NAME_MORE_DEPENDENT_FILEDS']);
+-							else
+-								visaFieldsMsg = visaFieldsMsg.replace("%COUNT",globalLanguageVar['COMMON_TEMPLATE_NAME_ONE_DEPENDENT_FILED']);
++							// if(count>1)
++							// 	visaFieldsMsg = visaFieldsMsg.replace("%COUNT",globalLanguageVar['COMMON_TEMPLATE_NAME_MORE_DEPENDENT_FILEDS']);
++							// else
++							// 	visaFieldsMsg = visaFieldsMsg.replace("%COUNT",globalLanguageVar['COMMON_TEMPLATE_NAME_ONE_DEPENDENT_FILED']);
+ 
+ 							if(errorAlert!=''){
+-								Ext.Msg.alert("{/literal}{#COMMON_ERROR#}{literal}",visaFieldsMsg +errorAlert.toUpperCase());
++								
++								Ext.Msg.alert("{/literal}{#COMMON_ERROR#}{literal}",doubleQuote+ visaFieldsMsg+errorAlert.toUpperCase()+doubleQuote);
+ 								return false;
+ 							}
+ 						}
+@@ -638,28 +639,28 @@
+ 						{
+ 							var AktDetails = [];
+ 							var errorAlert='';
+-							var count=0;
++							// var count=0;
+ 							AktDetails = {/literal}{$objPassengerTemplate->_AktDetails|@json_encode}{literal};
+-							var AktDetailsData=AktDetails.toLocaleString().toLowerCase().split(','); 
++							// var AktDetailsData=AktDetails.toLocaleString().toLowerCase().split(','); 
+ 
+ 							for(i=0;i<AktDetails.length;i++)
+ 							{
+ 								if(!Ext.getCmp(AktDetails[i]+'_container'))
+ 								{
+-									errorAlert+="<br> - "+AktDetails[i];
++									errorAlert+="<br>\u2022"+AktDetails[i];
+ 									count++;
+ 								}
+ 							}
+ 							var ktFieldsMsg=globalLanguageVar['COMMON_TEMPLATE_NAME_DEPENDENCYFIELD_MISSING'];
+-							ktFieldsMsg = ktFieldsMsg.replace("%FIELD",AktDetailsData);
++							// ktFieldsMsg = ktFieldsMsg.replace("%FIELD",AktDetailsData);
+ 
+-							if(count>1)
+-								ktFieldsMsg = ktFieldsMsg.replace("%COUNT",globalLanguageVar['COMMON_TEMPLATE_NAME_MORE_DEPENDENT_FILEDS']);
+-							else
+-								ktFieldsMsg = ktFieldsMsg.replace("%COUNT",globalLanguageVar['COMMON_TEMPLATE_NAME_ONE_DEPENDENT_FILED']);
++							// if(count>1)
++							// 	ktFieldsMsg = ktFieldsMsg.replace("%COUNT",globalLanguageVar['COMMON_TEMPLATE_NAME_MORE_DEPENDENT_FILEDS']);
++							// else
++							// 	ktFieldsMsg = ktFieldsMsg.replace("%COUNT",globalLanguageVar['COMMON_TEMPLATE_NAME_ONE_DEPENDENT_FILED']);
+ 
+ 							if(errorAlert!=''){
+-								Ext.Msg.alert("{/literal}{#COMMON_ERROR#}{literal}",ktFieldsMsg+errorAlert.toUpperCase());
++								Ext.Msg.alert("{/literal}{#COMMON_ERROR#}{literal}",doubleQuote+ ktFieldsMsg+errorAlert.toUpperCase()+doubleQuote);
+ 								return false;
+ 							}
+ 						}
+@@ -671,29 +672,29 @@
+ 						{
+ 							var AaddressDetails = [];
+ 							var errorAlert='';
+-							var count=0;
++							// var count=0;
+ 							
+ 							AaddressDetails = {/literal}{$objPassengerTemplate->_AaddressDetails|@json_encode}{literal};
+-							var AaddressDetailsData=AaddressDetails.toLocaleString().toLowerCase().split(','); 
++							// var AaddressDetailsData=AaddressDetails.toLocaleString().toLowerCase().split(','); 
+ 
+ 							for(i=0;i<AaddressDetails.length;i++)
+ 							{
+ 								if(!Ext.getCmp(AaddressDetails[i]+'_container'))
+ 								{
+-									errorAlert+="<br> - "+AaddressDetails[i];
++									errorAlert+="<br>\u2022"+AaddressDetails[i];
+ 									count++;
+ 
+ 								}
+ 							}
+ 							var addressFieldsMsg=globalLanguageVar['COMMON_TEMPLATE_NAME_DEPENDENCYFIELD_MISSING'];
+-							addressFieldsMsg = addressFieldsMsg.replace("%FIELD",AaddressDetailsData);
+-							if(count>1)
+-								addressFieldsMsg = addressFieldsMsg.replace("%COUNT",globalLanguageVar['COMMON_TEMPLATE_NAME_MORE_DEPENDENT_FILEDS']);
+-							else
+-								addressFieldsMsg = addressFieldsMsg.replace("%COUNT",globalLanguageVar['COMMON_TEMPLATE_NAME_ONE_DEPENDENT_FILED']);
++							// addressFieldsMsg = addressFieldsMsg.replace("%FIELD",AaddressDetailsData);
++							// if(count>1)
++							// 	addressFieldsMsg = addressFieldsMsg.replace("%COUNT",globalLanguageVar['COMMON_TEMPLATE_NAME_MORE_DEPENDENT_FILEDS']);
++							// else
++							// 	addressFieldsMsg = addressFieldsMsg.replace("%COUNT",globalLanguageVar['COMMON_TEMPLATE_NAME_ONE_DEPENDENT_FILED']);
+ 							if(errorAlert!='')
+ 							{
+-								Ext.Msg.alert("{/literal}{#COMMON_ERROR#}{literal}",addressFieldsMsg+errorAlert.toUpperCase());
++								Ext.Msg.alert("{/literal}{#COMMON_ERROR#}{literal}",doubleQuote+ addressFieldsMsg+errorAlert.toUpperCase()+doubleQuote);
+ 								return false;
+ 							}
+ 						}
+@@ -705,28 +706,26 @@
+ 						{
+ 							var ApassportNo = [];
+ 							var errorAlert='';
+-							var count=0;
+ 							ApassportNoDetails = {/literal}{$objPassengerTemplate->_ApassportDetails|@json_encode}{literal};
+-							var ApassportNoData=ApassportNoDetails.toLocaleString().toLowerCase().split(','); 
++							// var ApassportNoData=ApassportNoDetails.toLocaleString().toLowerCase().split(','); 
+ 
+ 							for(i=0;i<ApassportNoDetails.length;i++)
+ 							{
+ 								if(!Ext.getCmp(ApassportNoDetails[i]+'_container'))
+ 								{
+-									errorAlert+="<br> - "+ApassportNoDetails[i];
++									errorAlert+="<br>\u2022"+ApassportNoDetails[i];
+ 									count++;
+ 								}
+ 							}
+ 							var passportNoFieldsMsg=globalLanguageVar['COMMON_TEMPLATE_NAME_DEPENDENCYFIELD_MISSING'];
+-							passportNoFieldsMsg = passportNoFieldsMsg.replace("%FIELD",ApassportNoData);
+ 
+-							if(count>1)
+-								passportNoFieldsMsg = passportNoFieldsMsg.replace("%COUNT",globalLanguageVar['COMMON_TEMPLATE_NAME_MORE_DEPENDENT_FILEDS']);
+-							else
+-								passportNoFieldsMsg = passportNoFieldsMsg.replace("%COUNT",globalLanguageVar['COMMON_TEMPLATE_NAME_ONE_DEPENDENT_FILED']);
++							// if(count>1)
++							// 	passportNoFieldsMsg = passportNoFieldsMsg.replace("%COUNT",globalLanguageVar['COMMON_TEMPLATE_NAME_MORE_DEPENDENT_FILEDS']);
++							// else
++							// 	passportNoFieldsMsg = passportNoFieldsMsg.replace("%COUNT",globalLanguageVar['COMMON_TEMPLATE_NAME_ONE_DEPENDENT_FILED']);
+ 
+ 							if(errorAlert!=''){
+-								Ext.Msg.alert("{/literal}{#COMMON_ERROR#}{literal}",passportNoFieldsMsg+errorAlert.toUpperCase());
++								Ext.Msg.alert("{/literal}{#COMMON_ERROR#}{literal}",doubleQuote+passportNoFieldsMsg+errorAlert.toUpperCase()+doubleQuote);
+ 								return false;
+ 							}
+ 						}
+Index: smarty/templates/groupLevelTimelineExtensionExtJs.tpl
+===================================================================
+--- smarty/templates/groupLevelTimelineExtensionExtJs.tpl	(revision 50609)
++++ smarty/templates/groupLevelTimelineExtensionExtJs.tpl	(revision 50610)
+@@ -1016,7 +1016,7 @@
+          //-- End -- Assign the payment percentage based on remaining paid amount/percentage   
+             Ext.getCmp("paymentValidity"+groupId).setValue(paymentValidities[0].payment_validity);
+             // Set payment validity type
+-            if(paymentValidities.fareTypeDetails){
++            if(paymentValidities.fareTypeDetails && paymentValidities[0].payment_validity_type ==''){
+                paymentValidities[0].payment_validity_type = paymentValidities['fareTypeDetails'][0].fare_validity_type_id;
+                Ext.getCmp("paymentValidityType"+groupId).setValue(paymentValidities[0].payment_validity_type);
+             } else{
+@@ -1047,7 +1047,7 @@
+                Ext.getCmp('payPaxValidityDetailsPanel'+groupId).add(getGroupPaymentValidityPanel(tempPayCount,paymentValidities[i].payment_percentage,'',groupId));
+                Ext.getCmp("paymentValidity"+groupId+"_"+tempPayCount).setValue(paymentValidities[i].payment_validity);
+                // Set payment validity type
+-               if(paymentValidities.fareTypeDetails){
++               if(paymentValidities.fareTypeDetails && paymentValidities[i].payment_validity_type == ''){
+                   paymentValidities[i].payment_validity_type = paymentValidities['fareTypeDetails'][0].fare_validity_type_id;
+                   Ext.getCmp("paymentValidityType"+groupId+"_"+tempPayCount).setValue(paymentValidities[i].payment_validity_type);
+                } else{
+Index: plugins/WN/view/WNHeader.tpl
+===================================================================
+--- plugins/WN/view/WNHeader.tpl	(revision 50609)
++++ plugins/WN/view/WNHeader.tpl	(revision 50610)
+@@ -25,7 +25,7 @@
+ 
+ 		<div id="target">
+ 		<!-- Header Start -->
+-		{if $smarty.session.groupRM.deepLink.status eq 'Y'}
++		{if $smarty.session.groupRM.deepLink.status eq 'Y' && isset($dlQueryParam)}
+ 		<header>
+ 			<div class="container">
+ 				<div class="row mar-none-xs">
+Index: index.php
+===================================================================
+--- index.php	(revision 50609)
++++ index.php	(revision 50610)
+@@ -320,6 +320,11 @@
+ 			$objSecurity->_redirectToConflictPage(); //link won't expire here
+ 		}
+ 	}
++	elseif(!empty($deepLink)){
++		/* This smarty value is to hide the deeplink header even if the deeplink session is available but the user is not from redirected through link.
++		This is to prevent the deeplink header to be rendered in the login page while accessing domain?grmAcess. */
++		$smarty->assign('dlQueryParam','Y');
++	}
+ 	
+ 	#Deeplink
+ 	if(isset($deepLink))
+Index: classes/class.deepLink.php
+===================================================================
+--- classes/class.deepLink.php	(revision 50609)
++++ classes/class.deepLink.php	(revision 50610)
+@@ -25,6 +25,7 @@
+     private $_ADBLinkData;
+     public $_AwrapperModuleDetails;
+     public $_Astatuses;
++    public $_OmenuObj;
+     const DELIMITER = '.';
+ 
+     public function __construct()
+@@ -148,7 +149,7 @@
+     public function _handleWrapperModuleProcessing($module, $formValues, $moduleName)
+     {
+         try {
+-             $this->_initializeSessionData();
++            $this->_initializeSessionData();
+             $this->_Ainputs['user_id'] = $_SESSION['groupRM']['deepLink']['userId'];
+ 
+             # Setting next module input if link is not valid.
+@@ -318,7 +319,7 @@
+      * @REDIRECT to payment already completed for the Request tpl page. 
+      * When hits are received for already fully payment completed request IDs, redirect to the retailSuccess page 
+      * and display the appropriate error messages.
+-     * @return none
++     * @return boolean
+      */
+     public function _retailUserSuccessMsgRedirect()
+     {
+@@ -331,8 +332,18 @@
+         $this->_Osmarty->assign("combinedCSS", $objSecurity->loadCombinedCSS());
+         $this->_Osmarty->assign("requestMasterId", $_IrequestMasterId);
+         $this->_Osmarty->assign("messageContent", $_SmessageContent);
+-        $this->_Osmarty->display('welcomeOnboard.tpl');
+-        exit;
++        if ($this->_OobjResponse){
++            $this->_Osmarty->assign("isObjResponsePresent", true);
++            $this->_OmenuObj->_SdivName = "groupDiv2";
++            $this->_OmenuObj->_StemplateDisplay = "welcomeOnboard.tpl";
++            $this->_OmenuObj->_StemplateName = "welcomeOnboard.tpl";
++            $this->_OmenuObj->_SstdTemplateName = "welcomeOnboard.tpl";
++            return true;
++        }
++        else{
++            $this->_Osmarty->display('welcomeOnboard.tpl');
++            exit;
++        }
+     }
+ 
+     /**
+@@ -518,8 +529,8 @@
+ 
+             /* Redirect to payment completed page if final payment is completed. */
+             if ($_BcheckFullPayment && $this->_isPaymentType())
+-                $this->_retailUserSuccessMsgRedirect();
+-
++                if($this->_retailUserSuccessMsgRedirect())
++                    return;
+             # Read and store the JSON mapping
+             $this->_setJsonMappingData();
+ 
+@@ -978,7 +989,7 @@
+         $_OotpObj->_setCommonObjConnection();
+         $_OotpObj->_setSmarty($this->_Osmarty);
+         $_OotpObj->_initializeOtpFunctionalities($this->_Ainputs['user_id'], $this->_Ainputs['request_master_id'],  $this->_SlinkType);
+-        
++
+         # Commenting this : To send OTP after auto focusing the OTP input box to prevent multiple OTP issue.
+         // $_OotpObj->_generateOTP($this->_Ainputs['user_id'], $this->_Ainputs['request_master_id'], $this->_SlinkType);
+         // $_OotpObj->_sendOTP();
+@@ -1359,9 +1370,9 @@
+      */
+     public function _getPaymentMasterIdWithRequestMasterId()
+     {
+-        if(empty($this->_Ainputs['request_master_id'])) # After logged in
++        if (empty($this->_Ainputs['request_master_id'])) # After logged in
+             $this->_Ainputs['request_master_id'] = $_SESSION['groupRM']['deepLink']['requestMasterId'];
+-        
++
+         $_StableString = 'payment_master pm JOIN airlines_request_mapping arm ON pm.airlines_request_id = arm.airlines_request_id';
+         $_AselectField = ['pm.payment_master_id'];
+         $_AconditionValue = [
+Index: classes/class.common.php
+===================================================================
+--- classes/class.common.php	(revision 50609)
++++ classes/class.common.php	(revision 50610)
+@@ -21148,7 +21148,9 @@
+ 			$condition .= " AND ud.user_id = ".$userId." limit 1";
+ 		}
+ 		else if($_IcorporateId != 0)
+-			$condition .= " AND cd.user_id = ud.user_id AND cd.corporate_id = ". $_IcorporateId." ";
++			$condition .= " AND cd.user_id = ud.user_id 
++							AND cd.corporate_id = {$_IcorporateId} 
++							AND ud.corporate_id = {$_IcorporateId}";
+ 
+ 		if($_SmultipleUser == "N")
+ 		{
+@@ -32990,22 +32992,27 @@
+ 				$objTransactionMaster = new transactionMaster();
+ 				$objTransactionMaster->_Oconnection = $this->_Oconnection;
+ 				$objTransactionMaster->_ItransactionId = $transactionMasterId;
+-				$_AtransactionMasterDetails = $objTransactionMaster->_selectTransactionMaster()[0];
++				$_AtransactionMasterDetails = $objTransactionMaster->_selectTransactionMaster();
++
++				if(!empty($_AtransactionMasterDetails[0]['request_master_history_id']))
++					$_IrequestMasterHistoryId = $_AtransactionMasterDetails[0]['request_master_history_id'];
++				else
++				{
++					# Getting request_master_history_id based on time of transaction as in view history
++					fileRequire("classesTpl/class.tpl.viewHistory.php");
++					$_OviewHistory = new viewHistory();
++					$_OviewHistory->_Oconnection = $this->_Oconnection;
++					$_IrequestMasterHistoryId = $_OviewHistory->_setRequestMasterHistoryId($_IrequestMasterId, $_AtransactionMasterDetails[0]['transaction_date']);
++				}
++
+ 			}
+ 
+ 			//request master history for modify
+-			# changed to performQuery to implement NOT IN condition.
+-			$_StableName = 'request_master_history';
+-			$_AselectField = ['*'];
+-			$_AconditionValue = [
+-				'request_master_id' => $_IrequestMasterId,
+-				'modify_status' => [
+-					'condition' => 'NOT IN',
+-					'value' => ['23'] # To restrict non - approved flight details for modify accept for WN. 
+-				]
+-			];
+-			$requestMasterHistoryDetails = $this->_Oconnection->_performQuery($_StableName,$_AselectField,'DB_AUTOQUERY_SELECT',$_AconditionValue);
+-
++			fileRequire("dataModels/class.requestMasterHistory.php");
++			$objRequestMasterHistory=new requestMasterHistory();
++			$objRequestMasterHistory->_Oconnection=$this->_Oconnection;
++			$objRequestMasterHistory->_IrequestMasterId=$_IrequestMasterId;
++			$requestMasterHistoryDetails=$objRequestMasterHistory->_selectRequestMasterHistory();
+ 			//overide and get the last row
+ 			foreach($requestMasterHistoryDetails as $key=>$value)
+ 				$_ArequestMasterHistoryDetails[$value['request_master_id']]=$value;
+@@ -33015,8 +33022,8 @@
+ 			fileRequire("dataModels/class.requestDetailsHistory.php");
+ 			$objRequestDetailsHistory=new requestDetailsHistory();
+ 			$objRequestDetailsHistory->_Oconnection=$this->_Oconnection;
+-			if(!empty($_AtransactionMasterDetails) && $_AtransactionMasterDetails['request_master_history_id'] != 0)
+-				$objRequestDetailsHistory->_IrequestMasterHistoryId = $_AtransactionMasterDetails['request_master_history_id'];
++			if(!empty($_IrequestMasterHistoryId) && $_IrequestMasterHistoryId != 0)
++				$objRequestDetailsHistory->_IrequestMasterHistoryId = $_IrequestMasterHistoryId;
+ 			else
+ 				$objRequestDetailsHistory->_IrequestMasterHistoryId = reset($requestMasterHistoryDetails)['request_master_history_id'];
+ 			$_ArequestDetails=$objRequestDetailsHistory->_selectRequestDetailsHistory();
+
+Property changes on: classes/class.common.php
+___________________________________________________________________
+Modified: svn:mergeinfo
+## -0,0 +0,1 ##
+   Merged /branches/dev/WNDevSprint2/classes/class.common.php:r50601
+Index: classes/class.systemSetup.php
+===================================================================
+--- classes/class.systemSetup.php	(revision 50609)
++++ classes/class.systemSetup.php	(revision 50610)
+@@ -1007,7 +1007,8 @@
+ 					"payment_type_name",
+ 					"passenger_type_name",
+ 					"passengerExpiryDateDisp",
+-					"paymentExpiryDateDisp"
++					"paymentExpiryDateDisp",
++					"payment_expiry"
+ 				]
+ 			],
+ 			"dashBoardNewCharts" => [
+Index: classes/class.getFareCheckDetails.php
+===================================================================
+--- classes/class.getFareCheckDetails.php	(revision 50609)
++++ classes/class.getFareCheckDetails.php	(revision 50610)
+@@ -827,7 +827,7 @@
+ 		if(!empty($this->_IinputData['cloneRequestMasterId']) && isset($this->_IinputData['cloneRequestMasterId']) )
+ 		{
+ 			$this->_IinputData['modifyRequestStatus']='N';
+-			unset($this->_IinputData['moduleName']);
++			// unset($this->_IinputData['moduleName']);
+ 		}
+ 		$_OmodifyRequest->_IinputData=$this->_IinputData;
+ 		$_OmodifyRequest->_updateInstantDateListInfo();
+@@ -1026,8 +1026,9 @@
+ 					{
+ 						$_Sscript.=$_Aresponse['response'];
+ 						$_countString =  $_countString + 1 ;
+-						if($_countString == count($_AthreadResults))
++						if($_countString == count($_AthreadResults) && $_countString  == $CFG["limit"]["defaultFltSelection"]["showFlights"])
+ 						{
++							$_countString=$this->_IinputData['fareCheckInput'][0]['option'];
+ 							$_Sscript.="setShowMore('$_countString');";
+ 						}
+ 					}
+@@ -1248,4 +1249,4 @@
+ 		return $this->_OobjResponse;
+ 	}
+ }
+-?>
+\ No newline at end of file
++?>
+
+Property changes on: classes/class.getFareCheckDetails.php
+___________________________________________________________________
+Modified: svn:mergeinfo
+## -0,0 +0,1 ##
+   Merged /branches/dev/WNDevSprint2/classes/class.getFareCheckDetails.php:r50607
+Index: classes/class.processRequest.php
+===================================================================
+--- classes/class.processRequest.php	(revision 50609)
++++ classes/class.processRequest.php	(revision 50610)
+@@ -1370,13 +1370,17 @@
+ 				/**
+ 				 * Checking the requested flight and seat availability from the service response
+ 				**/
++				$_BmergeThroughFlight = systemSetup::_getGlobalConfig("limit,controlViaFlights,mergeThroughFlights") == "Y";
++
+ 				foreach($_AtempFlightResult as $_IondKey=>$_AondValues)
+ 				{
+ 					foreach($_AondValues as $_AfltValues)
+ 					{
+ 						$_IseriesRequestId = $_BisModify ? (array_key_exists("seriesRequestDetailsHistoryId", $_AfltValues) ? "seriesRequestDetailsHistoryId" : "seriesRequestHistoryId") : "seriesRequestId";
+-						$_AtempRequestedFlightNo = explode(',', $_ArequestedFlightNo[$_AfltValues[$_IseriesRequestId]]);			
+-						if(in_array($_AfltValues['flightNum'],$_AtempRequestedFlightNo))
++						$_ArequestedFlightNumber = explode(',', $_ArequestedFlightNo[$_AfltValues[$_IseriesRequestId]]);
++						$_AtempRequestedFlightNo = $_BmergeThroughFlight ? array_map([$this, "_removeThroughFlights"], $_ArequestedFlightNumber) : $_ArequestedFlightNumber;
++
++						if(in_array($_AfltValues['flightNum'], $_AtempRequestedFlightNo))
+ 						{					
+ 							if($_AfltValues['seatAvailability'] >= $_ArequestedPassenger[$_AfltValues[$_IseriesRequestId]])
+ 								$_AresponseFlightResult[$_IgroupId][$_IondKey][] = $_AfltValues;
+@@ -1729,7 +1733,7 @@
+ 							$_AfareInput[$i]['flightAvailability'][0]=array($_AflightInfo);
+ 							$_AfareInput[$i]['inputArray']= $_AcombinationDetails[$_IoptionKey];
+ 							$_AfareInput[$i]['option']= empty($_AexactoptionIndex) ? $_IoptionStartCount : $_AexactoptionIndex[$j];
+-							$_OgetFareCheck->_IinputData['nonModifyOptionCount'] = $_IoptionStartCount;
++							$_OgetFareCheck->_IinputData['nonModifyOptionCount'] =  $_AfareInput[$i]['option'];
+ 							$i++;
+ 							$j++;
+ 						}
+@@ -5675,5 +5679,37 @@
+ 		return $_ApaymentValidities;
+ 	}
+ 
++	/**	
++     *  @author Naveen Kumar B
++	 *  @since 01-08-2024
++	 * 
++	 *  @method _removeThroughFlights
++     *  @Desc : The function is used to remove the through(via) flights from the flightNumber.
++	  	Example: Expected result for the given input has listed below.
++		Input          |      Output
++
++		WN-100/100     |      WN-100
++		WN-100/101     |      WN-100/101
++		WN-101/100/100 |      WN-101/100
++     *  @return string
++	*/
++	public function _removeThroughFlights($_SmaskedFlightNumber)
++	{
++		try
++		{
++			#Explode the airlineCode and flightNumber
++			$_AexplodeCodeAndNumber = explode("-", $_SmaskedFlightNumber);
++			$_SairlineCode = current($_AexplodeCodeAndNumber);
++		
++			#remove the via flights using array_unique funtion.
++			$_SuniqueFlightNumber = implode("/", array_unique(explode("/", end($_AexplodeCodeAndNumber))));
++			return "{$_SairlineCode}-{$_SuniqueFlightNumber}";
++		}
++		catch(Throwable $e)
++		{
++			return $_SmaskedFlightNumber;
++		}
++	}
+ }
++
+ ?>
+
+---
+
+Please analyze the above and generate a comprehensive analysis document following the structure outlined.

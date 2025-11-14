@@ -9,7 +9,8 @@ from dependency_service import DependencyService
 from vcs_handler import generate_git_patch, generate_svn_patch
 from document_processor import extract_text_from_file
 from gemini_helper import analyze_brd_and_patch
-
+import dotenv
+dotenv.load_dotenv()
 logging.basicConfig(level=logging.INFO)
 
 app = Flask(__name__)
@@ -288,6 +289,96 @@ def process_stage(feature_id, stage_index):
                         else:
                             flash(f'Error during AI analysis: {str(e)}', 'error')
         
+        elif action == 'manual_merge' and stage_name == 'Merging':
+            patch_generation_data = stage_data.get('Patch Generation', {})
+            commit_hash = patch_generation_data.get('commit_hash')
+            repo_url = patch_generation_data.get('repo_url')
+            vcs_type = patch_generation_data.get('vcs_type')
+            
+            if not commit_hash or not repo_url:
+                flash('Missing commit information. Please complete Patch Generation stage first!', 'error')
+            else:
+                import re
+                if not re.match(r'^[a-zA-Z0-9]+$', str(commit_hash)):
+                    flash('Invalid commit hash format!', 'error')
+                else:
+                    if vcs_type == 'svn':
+                        merge_command = f"svn merge -c {commit_hash} {repo_url}"
+                    elif vcs_type == 'git':
+                        merge_command = f"git cherry-pick {commit_hash}"
+                    else:
+                        merge_command = "Unsupported VCS type"
+                    
+                    stage_data[stage_name] = {
+                        'completed': False,
+                        'timestamp': datetime.utcnow().isoformat(),
+                        'merge_status': 'command_ready',
+                        'merge_command': merge_command,
+                        'merge_message': 'Manual merge command generated. Please execute the command in your local working copy.',
+                        'vcs_type': vcs_type,
+                        'commit_hash': commit_hash,
+                        'repo_url': repo_url,
+                        'method': 'manual'
+                    }
+                    feature.set_stage_data(stage_data)
+                    db.session.commit()
+                    flash(f'Merge command generated. Please run it in your local working copy.', 'info')
+        
+        elif action == 'upload_unit_tests' and stage_name == 'Unit Testing':
+            test_cases_file = request.files.get('test_cases_file')
+            playwright_prompt_file = request.files.get('playwright_prompt_file')
+            
+            if not test_cases_file or not test_cases_file.filename:
+                if not stage_data.get(stage_name, {}).get('test_cases_filename'):
+                    flash('Unit Test Cases Sheet is required!', 'error')
+                    return redirect(url_for('process_stage', feature_id=feature_id, stage_index=stage_index))
+            
+            if not playwright_prompt_file or not playwright_prompt_file.filename:
+                if not stage_data.get(stage_name, {}).get('playwright_prompt_filename'):
+                    flash('Playwright Prompt File is required!', 'error')
+                    return redirect(url_for('process_stage', feature_id=feature_id, stage_index=stage_index))
+            
+            try:
+                timestamp = datetime.utcnow().strftime('%Y%m%d_%H%M%S')
+                
+                test_cases_path = None
+                test_cases_filename = None
+                if test_cases_file and test_cases_file.filename:
+                    test_cases_filename = secure_filename(test_cases_file.filename)
+                    test_cases_path = os.path.join(app.config['UPLOAD_FOLDER'], f"{timestamp}_testcases_{test_cases_filename}")
+                    test_cases_file.save(test_cases_path)
+                else:
+                    test_cases_path = stage_data.get(stage_name, {}).get('test_cases_path')
+                    test_cases_filename = stage_data.get(stage_name, {}).get('test_cases_filename')
+                
+                playwright_prompt_path = None
+                playwright_prompt_filename = None
+                if playwright_prompt_file and playwright_prompt_file.filename:
+                    playwright_prompt_filename = secure_filename(playwright_prompt_file.filename)
+                    playwright_prompt_path = os.path.join(app.config['UPLOAD_FOLDER'], f"{timestamp}_playwright_{playwright_prompt_filename}")
+                    playwright_prompt_file.save(playwright_prompt_path)
+                else:
+                    playwright_prompt_path = stage_data.get(stage_name, {}).get('playwright_prompt_path')
+                    playwright_prompt_filename = stage_data.get(stage_name, {}).get('playwright_prompt_filename')
+                
+                stage_data[stage_name] = {
+                    'completed': False,
+                    'timestamp': datetime.utcnow().isoformat(),
+                    'test_cases_path': test_cases_path,
+                    'test_cases_filename': test_cases_filename,
+                    'playwright_prompt_path': playwright_prompt_path,
+                    'playwright_prompt_filename': playwright_prompt_filename
+                }
+                
+                feature.set_stage_data(stage_data)
+                db.session.commit()
+                
+                flash('Test documentation uploaded successfully!', 'success')
+                
+            except Exception as e:
+                logging.error(f"Error uploading test files: {str(e)}")
+                flash(f'Error uploading files: {str(e)}', 'error')
+        
         elif action == 'skip':
             if stage_index < len(WORKFLOW_STAGES) - 1:
                 feature.current_stage = WORKFLOW_STAGES[stage_index + 1]
@@ -394,6 +485,36 @@ def delete_feature(feature_id):
     
     flash(f'Feature "{name}" deleted successfully!', 'success')
     return redirect(url_for('index'))
+
+@app.route('/download/analysis/<int:feature_id>')
+def download_analysis(feature_id):
+    from flask import send_file
+    feature = Feature.query.get_or_404(feature_id)
+    stage_data = feature.get_stage_data()
+    
+    analysis_data = stage_data.get('AI Analysis', {})
+    analysis_file = analysis_data.get('analysis_file')
+    
+    if not analysis_file or not os.path.exists(analysis_file):
+        flash('Analysis file not found!', 'error')
+        return redirect(url_for('workflow', feature_id=feature_id))
+    
+    return send_file(analysis_file, as_attachment=True, download_name=analysis_data.get('analysis_filename', 'analysis.md'))
+
+@app.route('/download/patch/<int:feature_id>')
+def download_patch(feature_id):
+    from flask import send_file
+    feature = Feature.query.get_or_404(feature_id)
+    stage_data = feature.get_stage_data()
+    
+    patch_data = stage_data.get('Patch Generation', {})
+    patch_file = patch_data.get('patch_file')
+    
+    if not patch_file or not os.path.exists(patch_file):
+        flash('Patch file not found!', 'error')
+        return redirect(url_for('workflow', feature_id=feature_id))
+    
+    return send_file(patch_file, as_attachment=True, download_name=patch_data.get('patch_filename', 'patch.patch'))
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000, debug=True)

@@ -4,14 +4,10 @@ psycopg2-binary==2.9.9
 python-dotenv==1.0.0
 GitPython==3.1.40
 Werkzeug==3.0.1
-google-generativeai==0.3.2
-openai==1.3.0
-Flask
-Flask-SQLAlchemy
-GitPython
-psycopg2-binary
-python-dotenv
 pandas
 PyPDF2
 python-docx
 requests
+docx
+sqlalchemy
+gunicorn

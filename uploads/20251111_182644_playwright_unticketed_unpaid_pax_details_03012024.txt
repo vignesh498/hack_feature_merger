@@ -1,0 +1,5 @@
+user             sky       agency
+type   iata code agentid   name max paxerror
+travel                     IndiGo
+Agency NONIATA             Agent     80
+
