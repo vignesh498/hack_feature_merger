@@ -294,35 +294,134 @@ def process_stage(feature_id, stage_index):
             commit_hash = patch_generation_data.get('commit_hash')
             repo_url = patch_generation_data.get('repo_url')
             vcs_type = patch_generation_data.get('vcs_type')
+            working_copy_path = request.form.get('target_branch', '').strip()
             
             if not commit_hash or not repo_url:
                 flash('Missing commit information. Please complete Patch Generation stage first!', 'error')
+            elif not working_copy_path:
+                flash('Local SVN working copy path is required!', 'error')
             else:
                 import re
+                import subprocess
+                import os
+                
                 if not re.match(r'^[a-zA-Z0-9]+$', str(commit_hash)):
                     flash('Invalid commit hash format!', 'error')
+                elif not os.path.isabs(working_copy_path) and not working_copy_path.startswith('.'):
+                    flash('Please provide an absolute path or relative path to local SVN working copy!', 'error')
                 else:
                     if vcs_type == 'svn':
+                        svnup_command = f"svn up {repo_url}"
                         merge_command = f"svn merge -c {commit_hash} {repo_url}"
+                        dry_run_command = f"svn merge --dry-run -c {commit_hash} {repo_url}"
+                        
+                        try:
+                            if not os.path.exists(working_copy_path):
+                                flash(f'Working copy path does not exist: {working_copy_path}', 'error')
+                            elif not os.path.isdir(working_copy_path):
+                                flash(f'Working copy path is not a directory: {working_copy_path}', 'error')
+                            else:
+                                subprocess.run(
+                                    svnup_command,
+                                    shell=True,
+                                    capture_output=True,
+                                    text=True,
+                                    timeout=60,
+                                    cwd=working_copy_path
+                                )
+                                result = subprocess.run(
+                                    dry_run_command,
+                                    shell=True,
+                                    capture_output=True,
+                                    text=True,
+                                    timeout=60,
+                                    cwd=working_copy_path
+                                )
+                                
+                                merge_output = result.stdout + result.stderr
+                                has_conflicts = 'C' in merge_output or 'conflict' in merge_output.lower() or result.returncode != 0
+                                
+                                if has_conflicts:
+                                    stage_data[stage_name] = {
+                                        'completed': False,
+                                        'timestamp': datetime.utcnow().isoformat(),
+                                        'merge_status': 'conflict',
+                                        'merge_command': merge_command,
+                                        'dry_run_command': dry_run_command,
+                                        'merge_message': f'Conflicts detected during dry-run merge in {working_copy_path}. Please proceed with AI-assisted merge.',
+                                        'merge_output': merge_output,
+                                        'vcs_type': vcs_type,
+                                        'commit_hash': commit_hash,
+                                        'repo_url': repo_url,
+                                        'target_branch': working_copy_path,
+                                        'method': 'manual_dry_run'
+                                    }
+                                    flash('Conflicts detected in dry-run merge! Please use AI-assisted merge.', 'warning')
+                                else:
+                                    stage_data[stage_name] = {
+                                        'completed': False,
+                                        'timestamp': datetime.utcnow().isoformat(),
+                                        'merge_status': 'success',
+                                        'merge_command': merge_command,
+                                        'dry_run_command': dry_run_command,
+                                        'merge_message': f'Dry-run merge completed successfully with no conflicts in {working_copy_path}. You can proceed with manual merge.',
+                                        'merge_output': merge_output,
+                                        'vcs_type': vcs_type,
+                                        'commit_hash': commit_hash,
+                                        'repo_url': repo_url,
+                                        'target_branch': working_copy_path,
+                                        'method': 'manual_dry_run'
+                                    }
+                                    flash(f'Dry-run merge successful! No conflicts detected. Proceed with manual merge in {working_copy_path}.', 'success')
+                                
+                                feature.set_stage_data(stage_data)
+                                db.session.commit()
+                            
+                        except subprocess.TimeoutExpired:
+                            flash('Dry-run merge command timed out. Please try again.', 'error')
+                        except Exception as e:
+                            logging.error(f"Error running dry-run merge: {str(e)}")
+                            flash(f'Error running dry-run merge: {str(e)}', 'error')
+                    
                     elif vcs_type == 'git':
                         merge_command = f"git cherry-pick {commit_hash}"
+                        dry_run_command = f"git cherry-pick --no-commit {commit_hash}"
+                        
+                        try:
+                            if not os.path.exists(working_copy_path):
+                                flash(f'Working copy path does not exist: {working_copy_path}', 'error')
+                            elif not os.path.isdir(working_copy_path):
+                                flash(f'Working copy path is not a directory: {working_copy_path}', 'error')
+                            else:
+                                stage_data[stage_name] = {
+                                    'completed': False,
+                                    'timestamp': datetime.utcnow().isoformat(),
+                                    'merge_status': 'command_ready',
+                                    'merge_command': merge_command,
+                                    'dry_run_command': dry_run_command,
+                                    'merge_message': f'Git cherry-pick command ready for working copy: {working_copy_path}. Please execute in your local working copy.',
+                                    'vcs_type': vcs_type,
+                                    'commit_hash': commit_hash,
+                                    'repo_url': repo_url,
+                                    'target_branch': working_copy_path,
+                                    'method': 'manual'
+                                }
+                                feature.set_stage_data(stage_data)
+                                db.session.commit()
+                                flash(f'Git merge command generated for {working_copy_path}. Please run it in your local working copy.', 'info')
+                        except Exception as e:
+                            logging.error(f"Error processing Git merge: {str(e)}")
+                            flash(f'Error: {str(e)}', 'error')
                     else:
-                        merge_command = "Unsupported VCS type"
-                    
-                    stage_data[stage_name] = {
-                        'completed': False,
-                        'timestamp': datetime.utcnow().isoformat(),
-                        'merge_status': 'command_ready',
-                        'merge_command': merge_command,
-                        'merge_message': 'Manual merge command generated. Please execute the command in your local working copy.',
-                        'vcs_type': vcs_type,
-                        'commit_hash': commit_hash,
-                        'repo_url': repo_url,
-                        'method': 'manual'
-                    }
-                    feature.set_stage_data(stage_data)
-                    db.session.commit()
-                    flash(f'Merge command generated. Please run it in your local working copy.', 'info')
+                        flash('Unsupported VCS type!', 'error')
+                        return render_template('stage.html', 
+                                             feature=feature, 
+                                             stage_name=stage_name,
+                                             stage_index=stage_index,
+                                             stage_content=get_stage_content(stage_name, feature),
+                                             stage_data=stage_data.get(stage_name, {}),
+                                             all_stage_data=stage_data,
+                                             total_stages=len(WORKFLOW_STAGES))
         
         elif action == 'upload_unit_tests' and stage_name == 'Unit Testing':
             test_cases_file = request.files.get('test_cases_file')

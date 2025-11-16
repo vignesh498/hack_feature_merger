@@ -465,13 +465,38 @@
         </div>
         {% elif stage_data.get('merge_status') == 'success' %}
         <div class="bg-green-50 border border-green-200 rounded-lg p-6 mb-6">
-            <div class="flex items-center">
+            <div class="flex items-start">
                 <svg class="w-8 h-8 text-green-600 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
                 </svg>
-                <div>
-                    <h3 class="text-lg font-bold text-green-900">Merge Completed Successfully!</h3>
-                    <p class="text-sm text-green-800 mt-1">{{ stage_data.get('merge_message', 'The feature has been merged successfully.') }}</p>
+                <div class="flex-1">
+                    <h3 class="text-lg font-bold text-green-900">✅ No Conflicts - Ready to Proceed with Manual Merge</h3>
+                    <p class="text-sm text-green-800 mt-1">{{ stage_data.get('merge_message', 'The dry-run merge completed successfully with no conflicts.') }}</p>
+                    
+                    {% if stage_data.get('merge_command') %}
+                    <div class="mt-3 bg-white rounded border border-green-300 p-4">
+                        <div class="flex items-center justify-between mb-2">
+                            <span class="text-xs font-semibold text-gray-700">Manual Merge Command:</span>
+                            <button 
+                                class="copy-merge-command text-xs bg-green-100 hover:bg-green-200 text-green-900 px-3 py-1 rounded transition"
+                                data-command="{{ stage_data.get('merge_command', '') | e }}"
+                            >
+                                📋 Copy
+                            </button>
+                        </div>
+                        <code class="text-sm text-gray-900 bg-gray-50 px-3 py-2 rounded block font-mono">{{ stage_data.get('merge_command', '') | e }}</code>
+                    </div>
+                    <div class="mt-3 bg-green-100 border border-green-300 rounded p-3">
+                        <p class="text-xs text-green-900">
+                            <span class="font-semibold">✓ Working Copy Path:</span> <span class="font-mono">{{ stage_data.get('target_branch', '') }}</span><br>
+                            <span class="font-semibold">Next Steps:</span><br>
+                            1. Navigate to the working copy directory above<br>
+                            2. Run the command: <code class="bg-white px-1 rounded">{{ stage_data.get('merge_command', '') }}</code><br>
+                            3. Test the merged changes<br>
+                            4. Mark this stage as complete
+                        </p>
+                    </div>
+                    {% endif %}
                 </div>
             </div>
         </div>
@@ -482,12 +507,21 @@
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
                 </svg>
                 <div class="flex-1">
-                    <h3 class="text-lg font-bold text-red-900">Merge Conflicts Detected</h3>
-                    <p class="text-sm text-red-800 mt-1">{{ stage_data.get('merge_message', 'Conflicts were found during the merge process.') }}</p>
+                    <h3 class="text-lg font-bold text-red-900">⚠️ Conflicts Detected - Proceed with AI Merge</h3>
+                    <p class="text-sm text-red-800 mt-1">{{ stage_data.get('merge_message', 'Conflicts were found during the dry-run merge process.') }}</p>
+                    
                     <div class="mt-3 bg-white rounded border border-red-200 p-3">
-                        <pre class="text-xs text-gray-700 whitespace-pre-wrap">{{ stage_data.get('merge_output', '') }}</pre>
+                        <h4 class="text-xs font-semibold text-gray-800 mb-2">Dry-Run Merge Output:</h4>
+                        <pre class="text-xs text-gray-700 whitespace-pre-wrap max-h-48 overflow-y-auto bg-gray-50 p-2 rounded border">{{ stage_data.get('merge_output', '') }}</pre>
                     </div>
-                    <p class="text-sm text-red-900 mt-3 font-semibold">Please proceed with AI-assisted merge below.</p>
+                    
+                    <div class="mt-3 bg-red-100 border border-red-300 rounded p-3">
+                        <p class="text-xs text-red-900">
+                            <span class="font-semibold">⚠️ Working Copy Path:</span> <span class="font-mono">{{ stage_data.get('target_branch', '') }}</span><br>
+                            <span class="font-semibold">Recommended Action:</span><br>
+                            Manual merge will fail due to conflicts. Please use the AI-Assisted Merge option below to download the analysis and patch files, then resolve conflicts with AI assistance.
+                        </p>
+                    </div>
                 </div>
             </div>
         </div>
@@ -503,7 +537,7 @@
                     </div>
                     <h3 class="text-lg font-bold text-gray-800">Manual Merge</h3>
                 </div>
-                <p class="text-sm text-gray-600 mb-4">Automatically run SVN merge command with the feature's commit ID. This will attempt to merge the changes directly.</p>
+                <p class="text-sm text-gray-600 mb-4">Execute dry-run SVN merge in your local working copy to detect conflicts before actual merge.</p>
                 
                 {% if all_stage_data.get('Patch Generation', {}).get('commit_hash') %}
                 <div class="bg-blue-50 border border-blue-200 rounded p-3 mb-4">
@@ -522,7 +556,23 @@
                 </div>
                 {% endif %}
                 
-                <form method="POST">
+                <form method="POST" class="space-y-3">
+                    <div>
+                        <label for="target_branch" class="block text-sm font-semibold text-gray-700 mb-2">
+                            Local SVN Working Copy Path <span class="text-red-500">*</span>
+                        </label>
+                        <input 
+                            type="text" 
+                            id="target_branch" 
+                            name="target_branch" 
+                            value="{{ stage_data.get('target_branch', '') }}"
+                            class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent text-sm font-mono"
+                            placeholder="/home/user/svn/trunk or /path/to/working/copy"
+                            required
+                        >
+                        <p class="text-xs text-gray-500 mt-1">Absolute path to your local SVN working copy where dry-run will execute</p>
+                    </div>
+                    
                     <button 
                         type="submit" 
                         name="action" 
@@ -533,7 +583,7 @@
                         <svg class="w-5 h-5 inline mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path>
                         </svg>
-                        Run Manual Merge
+                        Run Dry-Run Merge
                     </button>
                 </form>
             </div>

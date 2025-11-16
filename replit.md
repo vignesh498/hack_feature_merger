@@ -98,3 +98,21 @@ A Flask-based web application that helps integrate features developed in older v
   - Secure file storage with timestamped filenames using secure_filename
   - Files stored in database via stage_data JSON field for persistence
   - Visual feedback showing uploaded filenames after successful upload
+- 2025-11-15: GitHub import setup for Replit environment:
+  - Installed all Python dependencies (Flask, SQLAlchemy, Gunicorn, Google Gemini, etc.)
+  - Created .gitignore for Python project with uploads/ and generated/ directories
+  - Configured PostgreSQL database connection using existing DATABASE_URL
+  - Set up flask-app workflow to run on 0.0.0.0:5000 for development
+  - Configured deployment with Gunicorn for autoscale production deployment
+  - Verified app is running successfully and responding to requests
+- 2025-11-15: Enhanced Stage 4 (Merging - Manual Merge) with dry-run SVN merge:
+  - Added local SVN working copy path input field (e.g., /home/user/svn/trunk)
+  - Implemented automatic SVN dry-run merge that executes in the specified working copy directory
+  - Path validation: Checks if directory exists and is accessible before running dry-run
+  - Dry-run command executes with `cwd=working_copy_path` to run in the local SVN directory
+  - Conflict detection logic parses dry-run output for merge conflicts ('C' flag, 'conflict' keyword, non-zero exit code)
+  - Display two distinct outcomes:
+    * No conflicts: Show success message with manual merge command and step-by-step instructions
+    * Conflicts detected: Show warning message with full dry-run output and recommendation to use AI-assisted merge
+  - Enhanced UI with color-coded status indicators (green for success, red for conflicts)
+  - Improved user experience with monospace font for paths and clear next-step instructions
