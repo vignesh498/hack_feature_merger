@@ -84,16 +84,17 @@
                 
                 <div>
                     <label for="commit_hash" class="block text-sm font-semibold text-gray-700 mb-2">
-                        Commit Hash / Revision <span class="text-red-500">*</span>
+                        Commit Hash / Revision (Comma-separated for multiple) <span class="text-red-500">*</span>
                     </label>
                     <input 
                         type="text" 
                         id="commit_hash" 
                         name="commit_hash" 
-                        value="{{ stage_data.get('commit_hash', '') }}"
+                        value="{{ stage_data.get('commit_hashes', []) | join(', ') if stage_data.get('commit_hashes') else stage_data.get('commit_hash', '') }}"
                         class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-                        placeholder="abc123de (Git hash) or 12345 (SVN revision)"
+                        placeholder="abc123de, def456gh (Git hashes) or 12345, 12346 (SVN revisions)"
                     >
+                    <p class="text-xs text-gray-500 mt-1">Enter single or multiple commit hashes separated by commas</p>
                 </div>
             </div>
             
@@ -112,7 +113,7 @@
             </div>
         </form>
         
-        {% if stage_data.get('patch_filename') %}
+        {% if stage_data.get('patch_filename') or stage_data.get('patch_files') %}
         <div class="mt-8 border-t border-gray-200 pt-8">
             <div class="bg-green-50 border border-green-200 rounded-lg p-6">
                 <div class="flex items-center mb-4">
@@ -120,26 +121,58 @@
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
                     </svg>
                     <div>
-                        <h3 class="text-lg font-bold text-green-900">Patch Generated Successfully</h3>
-                        <p class="text-sm text-green-800">File: {{ stage_data.get('patch_filename') }}</p>
+                        <h3 class="text-lg font-bold text-green-900">Patch{% if stage_data.get('patch_files') and stage_data.get('patch_files')|length > 1 %}es{% endif %} Generated Successfully</h3>
+                        {% if stage_data.get('patch_files') and stage_data.get('patch_files')|length > 1 %}
+                            <p class="text-sm text-green-800">{{ stage_data.get('patch_files')|length }} patch files generated</p>
+                        {% else %}
+                            <p class="text-sm text-green-800">File: {{ stage_data.get('patch_filename') }}</p>
+                        {% endif %}
                     </div>
                 </div>
-                <div class="bg-white rounded-lg p-4 border border-green-200">
-                    <div class="grid grid-cols-2 gap-4 text-sm">
-                        <div>
-                            <span class="text-gray-600">VCS Type:</span>
-                            <span class="font-semibold ml-2">{{ stage_data.get('vcs_type', '').upper() }}</span>
+                
+                {% if stage_data.get('patch_files') and stage_data.get('patch_files')|length > 1 %}
+                    {% for patch in stage_data.get('patch_files', []) %}
+                    <div class="bg-white rounded-lg p-4 border border-green-200 mb-3">
+                        <div class="grid grid-cols-2 gap-4 text-sm">
+                            <div class="col-span-2">
+                                <span class="text-gray-600 font-semibold">Patch {{ loop.index }}:</span>
+                                <span class="font-mono text-xs ml-2">{{ patch.patch_filename }}</span>
+                            </div>
+                            <div>
+                                <span class="text-gray-600">VCS Type:</span>
+                                <span class="font-semibold ml-2">{{ stage_data.get('vcs_type', '').upper() }}</span>
+                            </div>
+                            <div>
+                                <span class="text-gray-600">Commit:</span>
+                                <span class="font-mono text-xs ml-2">{{ patch.commit_hash }}</span>
+                            </div>
                         </div>
-                        <div>
-                            <span class="text-gray-600">Commit:</span>
-                            <span class="font-mono text-xs ml-2">{{ stage_data.get('commit_hash', '') }}</span>
-                        </div>
-                        <div class="col-span-2">
+                    </div>
+                    {% endfor %}
+                    <div class="bg-white rounded-lg p-4 border border-green-200 mt-3">
+                        <div class="text-sm">
                             <span class="text-gray-600">Repository:</span>
                             <span class="text-xs ml-2 break-all">{{ stage_data.get('repo_url', '') }}</span>
                         </div>
                     </div>
-                </div>
+                {% else %}
+                    <div class="bg-white rounded-lg p-4 border border-green-200">
+                        <div class="grid grid-cols-2 gap-4 text-sm">
+                            <div>
+                                <span class="text-gray-600">VCS Type:</span>
+                                <span class="font-semibold ml-2">{{ stage_data.get('vcs_type', '').upper() }}</span>
+                            </div>
+                            <div>
+                                <span class="text-gray-600">Commit:</span>
+                                <span class="font-mono text-xs ml-2">{{ stage_data.get('commit_hash', '') }}</span>
+                            </div>
+                            <div class="col-span-2">
+                                <span class="text-gray-600">Repository:</span>
+                                <span class="text-xs ml-2 break-all">{{ stage_data.get('repo_url', '') }}</span>
+                            </div>
+                        </div>
+                    </div>
+                {% endif %}
             </div>
         </div>
         {% endif %}
@@ -539,12 +572,28 @@
                 </div>
                 <p class="text-sm text-gray-600 mb-4">Execute dry-run SVN merge in your local working copy to detect conflicts before actual merge.</p>
                 
-                {% if all_stage_data.get('Patch Generation', {}).get('commit_hash') %}
+                {% if all_stage_data.get('Patch Generation', {}).get('commit_hashes') or all_stage_data.get('Patch Generation', {}).get('commit_hash') %}
                 <div class="bg-blue-50 border border-blue-200 rounded p-3 mb-4">
-                    <p class="text-xs text-blue-900">
-                        <span class="font-semibold">Commit ID:</span> 
-                        <span class="font-mono">{{ all_stage_data.get('Patch Generation', {}).get('commit_hash') }}</span>
-                    </p>
+                    {% set commit_hashes = all_stage_data.get('Patch Generation', {}).get('commit_hashes', []) %}
+                    {% if not commit_hashes %}
+                        {% set commit_hashes = [all_stage_data.get('Patch Generation', {}).get('commit_hash')] %}
+                    {% endif %}
+                    
+                    {% if commit_hashes|length > 1 %}
+                        <p class="text-xs text-blue-900 font-semibold mb-1">Commit IDs ({{ commit_hashes|length }} commits):</p>
+                        <div class="space-y-1">
+                            {% for commit in commit_hashes %}
+                            <p class="text-xs text-blue-900 pl-2">
+                                • <span class="font-mono">{{ commit }}</span>
+                            </p>
+                            {% endfor %}
+                        </div>
+                    {% else %}
+                        <p class="text-xs text-blue-900">
+                            <span class="font-semibold">Commit ID:</span> 
+                            <span class="font-mono">{{ commit_hashes[0] if commit_hashes else '' }}</span>
+                        </p>
+                    {% endif %}
                     <p class="text-xs text-blue-900 mt-1">
                         <span class="font-semibold">VCS:</span> 
                         {{ all_stage_data.get('Patch Generation', {}).get('vcs_type', '').upper() }}
@@ -765,6 +814,131 @@
                         </svg>
                         Upload Test Documentation
                     </button>
+                </div>
+            </div>
+        </form>
+    </div>
+    
+    {% elif stage_name == 'Release Documentation' %}
+    <div class="bg-white rounded-lg shadow-lg p-8 mb-6">
+        <h2 class="text-xl font-bold text-gray-800 mb-4">
+            <svg class="w-6 h-6 inline mr-2 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
+            </svg>
+            Release Documentation
+        </h2>
+        
+        <div class="bg-blue-50 border-l-4 border-blue-500 p-6 mb-6">
+            <div class="flex items-start">
+                <svg class="w-6 h-6 text-blue-600 mr-3 mt-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                </svg>
+                <div>
+                    <h3 class="text-lg font-bold text-blue-900 mb-2">Instructions</h3>
+                    <p class="text-blue-800">Assign this feature to a release version and provide release notes. You can either complete and continue adding more features, or release the version to view all features in the release.</p>
+                </div>
+            </div>
+        </div>
+        
+        {% if stage_data.get('version_number') %}
+        <div class="bg-green-50 border border-green-200 rounded-lg p-6 mb-6">
+            <div class="flex items-center mb-2">
+                <svg class="w-6 h-6 text-green-600 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                </svg>
+                <h3 class="text-lg font-bold text-green-900">Release Notes Saved</h3>
+            </div>
+            <p class="text-green-800"><strong>Version:</strong> {{ stage_data.get('version_number') }}</p>
+            <div class="mt-3 bg-white border border-green-200 rounded-lg p-4">
+                <p class="text-sm font-semibold text-gray-800 mb-2">Release Notes:</p>
+                <p class="text-gray-700 whitespace-pre-wrap">{{ stage_data.get('release_notes') }}</p>
+            </div>
+        </div>
+        {% endif %}
+        
+        <form method="POST" class="space-y-6">
+            <div class="bg-gradient-to-br from-gray-50 to-gray-100 border-2 border-gray-300 rounded-lg p-6">
+                <h3 class="text-md font-bold text-gray-800 mb-4">Release Version Information</h3>
+                
+                <div class="space-y-4">
+                    <div>
+                        <label for="version_number" class="block text-sm font-semibold text-gray-700 mb-2">
+                            Release Version Number <span class="text-red-500">*</span>
+                        </label>
+                        <input 
+                            type="text" 
+                            id="version_number" 
+                            name="version_number" 
+                            value="{{ stage_data.get('version_number', '') }}"
+                            placeholder="e.g., v1.0.0, 2024.1, Release-1"
+                            class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                            required
+                        >
+                        <p class="text-xs text-gray-500 mt-1">Enter a new version number to create a new release, or use an existing one to add to that release</p>
+                    </div>
+                    
+                    <div>
+                        <label for="release_notes" class="block text-sm font-semibold text-gray-700 mb-2">
+                            Feature Release Notes <span class="text-red-500">*</span>
+                        </label>
+                        <textarea 
+                            id="release_notes" 
+                            name="release_notes" 
+                            rows="6"
+                            placeholder="Describe what this feature adds to the release, including key changes, improvements, and any important notes..."
+                            class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                            required
+                        >{{ stage_data.get('release_notes', '') }}</textarea>
+                        <p class="text-xs text-gray-500 mt-1">These notes will be included in the release summary</p>
+                    </div>
+                </div>
+                
+                <div class="mt-6 flex flex-col sm:flex-row gap-3">
+                    <button 
+                        type="submit" 
+                        name="action" 
+                        value="save_release_notes"
+                        class="flex-1 bg-gray-600 text-white px-6 py-3 rounded-lg font-semibold hover:bg-gray-700 transition shadow-lg"
+                    >
+                        <svg class="w-5 h-5 inline mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4"></path>
+                        </svg>
+                        Save Release Notes
+                    </button>
+                    
+                    <button 
+                        type="submit" 
+                        name="action" 
+                        value="complete_and_continue"
+                        class="flex-1 bg-gradient-to-r from-green-600 to-emerald-600 text-white px-6 py-3 rounded-lg font-semibold hover:shadow-lg transition transform hover:scale-105"
+                    >
+                        <svg class="w-5 h-5 inline mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                        </svg>
+                        Complete & Continue
+                    </button>
+                    
+                    <button 
+                        type="submit" 
+                        name="action" 
+                        value="release_version"
+                        class="flex-1 bg-gradient-to-r from-indigo-600 to-purple-600 text-white px-6 py-3 rounded-lg font-semibold hover:shadow-lg transition transform hover:scale-105"
+                    >
+                        <svg class="w-5 h-5 inline mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
+                        </svg>
+                        Release Version
+                    </button>
+                </div>
+                
+                <div class="mt-4 bg-blue-50 border border-blue-200 rounded-lg p-4">
+                    <p class="text-sm text-blue-900">
+                        <svg class="w-4 h-4 inline mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                        </svg>
+                        <strong>Complete & Continue:</strong> Finish this feature and add more features to the release<br>
+                        <strong>Release Version:</strong> Finalize the release and view all features with their documentation
+                    </p>
                 </div>
             </div>
         </form>

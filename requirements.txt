@@ -26,3 +26,17 @@ sqlalchemy
 Werkzeug
 google-generativeai
 openpyxl
+Flask
+Flask-SQLAlchemy
+GitPython
+google-generativeai
+gunicorn
+openpyxl
+pandas
+psycopg2-binary
+PyPDF2
+python-docx
+python-dotenv
+requests
+sqlalchemy
+Werkzeug

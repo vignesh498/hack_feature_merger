@@ -35,6 +35,19 @@ WORKFLOW_STAGES = [
     'Release Documentation'
 ]
 
+class ReleaseVersion(db.Model):
+    __tablename__ = 'release_versions'
+    
+    id = db.Column(db.Integer, primary_key=True)
+    version_number = db.Column(db.String(50), nullable=False, unique=True)
+    is_released = db.Column(db.Boolean, default=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    released_at = db.Column(db.DateTime)
+    features = db.relationship('Feature', backref='release_version', lazy=True)
+    
+    def __repr__(self):
+        return f'<ReleaseVersion {self.version_number}>'
+
 class Feature(db.Model):
     __tablename__ = 'features'
     
@@ -51,6 +64,7 @@ class Feature(db.Model):
     commit_id = db.Column(db.String(100))
     patch_file_path = db.Column(db.String(500))
     analysis_file_path = db.Column(db.String(500))
+    release_version_id = db.Column(db.Integer, db.ForeignKey('release_versions.id'))
     
     def __repr__(self):
         return f'<Feature {self.name}>'
@@ -186,46 +200,71 @@ def process_stage(feature_id, stage_index):
         elif action == 'generate_patch' and stage_name == 'Patch Generation':
             vcs_type = request.form.get('vcs_type', '').strip()
             repo_url = request.form.get('repo_url', '').strip()
-            commit_hash = request.form.get('commit_hash', '').strip()
+            commit_hashes_input = request.form.get('commit_hash', '').strip()
             
-            if not vcs_type or not repo_url or not commit_hash:
+            if not vcs_type or not repo_url or not commit_hashes_input:
                 flash('All fields are required for patch generation!', 'error')
             else:
                 try:
-                    timestamp = datetime.utcnow().strftime('%Y%m%d_%H%M%S')
-                    patch_filename = f"{feature.name.replace(' ', '_')}_{timestamp}.patch"
-                    patch_path = os.path.join(app.config['GENERATED_FOLDER'], patch_filename)
+                    commit_hashes = [h.strip() for h in commit_hashes_input.split(',') if h.strip()]
                     
-                    if vcs_type == 'git':
-                        generate_git_patch(repo_url, commit_hash, patch_path)
-                    elif vcs_type == 'svn':
-                        generate_svn_patch(repo_url, commit_hash, patch_path)
-                    else:
-                        flash('Invalid VCS type!', 'error')
-                        return render_template('stage.html', 
-                                             feature=feature, 
-                                             stage_name=stage_name,
-                                             stage_index=stage_index,
-                                             stage_content=get_stage_content(stage_name, feature),
-                                             stage_data=stage_data.get(stage_name, {}),
-                                             total_stages=len(WORKFLOW_STAGES))
+                    if not commit_hashes:
+                        flash('Please provide at least one commit hash!', 'error')
+                        return redirect(url_for('process_stage', feature_id=feature_id, stage_index=stage_index))
+                    
+                    timestamp = datetime.utcnow().strftime('%Y%m%d_%H%M%S')
+                    patch_files = []
+                    
+                    for idx, commit_hash in enumerate(commit_hashes):
+                        if len(commit_hashes) > 1:
+                            patch_filename = f"{feature.name.replace(' ', '_')}_{commit_hash[:8]}_{timestamp}.patch"
+                        else:
+                            patch_filename = f"{feature.name.replace(' ', '_')}_{timestamp}.patch"
+                        
+                        patch_path = os.path.join(app.config['GENERATED_FOLDER'], patch_filename)
+                        
+                        if vcs_type == 'git':
+                            generate_git_patch(repo_url, commit_hash, patch_path)
+                        elif vcs_type == 'svn':
+                            generate_svn_patch(repo_url, commit_hash, patch_path)
+                        else:
+                            flash('Invalid VCS type!', 'error')
+                            return render_template('stage.html', 
+                                                 feature=feature, 
+                                                 stage_name=stage_name,
+                                                 stage_index=stage_index,
+                                                 stage_content=get_stage_content(stage_name, feature),
+                                                 stage_data=stage_data.get(stage_name, {}),
+                                                 total_stages=len(WORKFLOW_STAGES))
+                        
+                        patch_files.append({
+                            'commit_hash': commit_hash,
+                            'patch_file': patch_path,
+                            'patch_filename': patch_filename
+                        })
                     
                     stage_data[stage_name] = {
                         'completed': False,
                         'timestamp': datetime.utcnow().isoformat(),
                         'vcs_type': vcs_type,
                         'repo_url': repo_url,
-                        'commit_hash': commit_hash,
-                        'patch_file': patch_path,
-                        'patch_filename': patch_filename
+                        'commit_hashes': commit_hashes,
+                        'commit_hash': commit_hashes[0],
+                        'patch_files': patch_files,
+                        'patch_file': patch_files[0]['patch_file'],
+                        'patch_filename': patch_files[0]['patch_filename']
                     }
                     feature.set_stage_data(stage_data)
                     
-                    feature.commit_id = commit_hash
-                    feature.patch_file_path = patch_path
+                    feature.commit_id = ','.join(commit_hashes)
+                    feature.patch_file_path = patch_files[0]['patch_file']
                     
                     db.session.commit()
-                    flash(f'Patch generated successfully: {patch_filename}', 'success')
+                    
+                    if len(commit_hashes) > 1:
+                        flash(f'Successfully generated {len(patch_files)} patch files for commits: {", ".join([h[:8] for h in commit_hashes])}', 'success')
+                    else:
+                        flash(f'Patch generated successfully: {patch_files[0]["patch_filename"]}', 'success')
                     
                 except Exception as e:
                     logging.error(f"Error generating patch: {str(e)}")
@@ -291,29 +330,38 @@ def process_stage(feature_id, stage_index):
         
         elif action == 'manual_merge' and stage_name == 'Merging':
             patch_generation_data = stage_data.get('Patch Generation', {})
-            commit_hash = patch_generation_data.get('commit_hash')
+            commit_hashes = patch_generation_data.get('commit_hashes', [])
+            if not commit_hashes:
+                commit_hash_single = patch_generation_data.get('commit_hash')
+                commit_hashes = [commit_hash_single] if commit_hash_single else []
+            
             repo_url = patch_generation_data.get('repo_url')
             vcs_type = patch_generation_data.get('vcs_type')
             working_copy_path = request.form.get('target_branch', '').strip()
             
-            if not commit_hash or not repo_url:
+            if not commit_hashes or not repo_url:
                 flash('Missing commit information. Please complete Patch Generation stage first!', 'error')
             elif not working_copy_path:
-                flash('Local SVN working copy path is required!', 'error')
+                flash('Local working copy path is required!', 'error')
             else:
                 import re
                 import subprocess
                 import os
                 
-                if not re.match(r'^[a-zA-Z0-9]+$', str(commit_hash)):
-                    flash('Invalid commit hash format!', 'error')
-                elif not os.path.isabs(working_copy_path) and not working_copy_path.startswith('.'):
-                    flash('Please provide an absolute path or relative path to local SVN working copy!', 'error')
+                for commit_hash in commit_hashes:
+                    if not re.match(r'^[a-zA-Z0-9]+$', str(commit_hash)):
+                        flash(f'Invalid commit hash format: {commit_hash}', 'error')
+                        return redirect(url_for('process_stage', feature_id=feature_id, stage_index=stage_index))
+                
+                if not os.path.isabs(working_copy_path) and not working_copy_path.startswith('.'):
+                    flash('Please provide an absolute path or relative path to local working copy!', 'error')
                 else:
                     if vcs_type == 'svn':
                         svnup_command = f"svn up {repo_url}"
-                        merge_command = f"svn merge -c {commit_hash} {repo_url}"
-                        dry_run_command = f"svn merge --dry-run -c {commit_hash} {repo_url}"
+                        merge_commands = [f"svn merge -c {ch} {repo_url}" for ch in commit_hashes]
+                        dry_run_commands = [f"svn merge --dry-run -c {ch} {repo_url}" for ch in commit_hashes]
+                        merge_command = ' && '.join(merge_commands)
+                        dry_run_command = dry_run_commands[0] if len(dry_run_commands) == 1 else f"# Run each command separately:\n" + '\n'.join(dry_run_commands)
                         
                         try:
                             if not os.path.exists(working_copy_path):
@@ -351,12 +399,16 @@ def process_stage(feature_id, stage_index):
                                         'merge_message': f'Conflicts detected during dry-run merge in {working_copy_path}. Please proceed with AI-assisted merge.',
                                         'merge_output': merge_output,
                                         'vcs_type': vcs_type,
-                                        'commit_hash': commit_hash,
+                                        'commit_hashes': commit_hashes,
+                                        'commit_hash': commit_hashes[0],
                                         'repo_url': repo_url,
                                         'target_branch': working_copy_path,
                                         'method': 'manual_dry_run'
                                     }
-                                    flash('Conflicts detected in dry-run merge! Please use AI-assisted merge.', 'warning')
+                                    if len(commit_hashes) > 1:
+                                        flash(f'Conflicts detected in dry-run merge for {len(commit_hashes)} commits! Please use AI-assisted merge.', 'warning')
+                                    else:
+                                        flash('Conflicts detected in dry-run merge! Please use AI-assisted merge.', 'warning')
                                 else:
                                     stage_data[stage_name] = {
                                         'completed': False,
@@ -367,12 +419,16 @@ def process_stage(feature_id, stage_index):
                                         'merge_message': f'Dry-run merge completed successfully with no conflicts in {working_copy_path}. You can proceed with manual merge.',
                                         'merge_output': merge_output,
                                         'vcs_type': vcs_type,
-                                        'commit_hash': commit_hash,
+                                        'commit_hashes': commit_hashes,
+                                        'commit_hash': commit_hashes[0],
                                         'repo_url': repo_url,
                                         'target_branch': working_copy_path,
                                         'method': 'manual_dry_run'
                                     }
-                                    flash(f'Dry-run merge successful! No conflicts detected. Proceed with manual merge in {working_copy_path}.', 'success')
+                                    if len(commit_hashes) > 1:
+                                        flash(f'Dry-run merge successful for {len(commit_hashes)} commits! No conflicts detected. Proceed with manual merge in {working_copy_path}.', 'success')
+                                    else:
+                                        flash(f'Dry-run merge successful! No conflicts detected. Proceed with manual merge in {working_copy_path}.', 'success')
                                 
                                 feature.set_stage_data(stage_data)
                                 db.session.commit()
@@ -384,8 +440,10 @@ def process_stage(feature_id, stage_index):
                             flash(f'Error running dry-run merge: {str(e)}', 'error')
                     
                     elif vcs_type == 'git':
-                        merge_command = f"git cherry-pick {commit_hash}"
-                        dry_run_command = f"git cherry-pick --no-commit {commit_hash}"
+                        merge_commands = [f"git cherry-pick {ch}" for ch in commit_hashes]
+                        dry_run_commands = [f"git cherry-pick --no-commit {ch}" for ch in commit_hashes]
+                        merge_command = ' && '.join(merge_commands)
+                        dry_run_command = dry_run_commands[0] if len(dry_run_commands) == 1 else f"# Run each command separately:\n" + '\n'.join(dry_run_commands)
                         
                         try:
                             if not os.path.exists(working_copy_path):
@@ -399,16 +457,20 @@ def process_stage(feature_id, stage_index):
                                     'merge_status': 'command_ready',
                                     'merge_command': merge_command,
                                     'dry_run_command': dry_run_command,
-                                    'merge_message': f'Git cherry-pick command ready for working copy: {working_copy_path}. Please execute in your local working copy.',
+                                    'merge_message': f'Git cherry-pick command(s) ready for working copy: {working_copy_path}. Please execute in your local working copy.',
                                     'vcs_type': vcs_type,
-                                    'commit_hash': commit_hash,
+                                    'commit_hashes': commit_hashes,
+                                    'commit_hash': commit_hashes[0],
                                     'repo_url': repo_url,
                                     'target_branch': working_copy_path,
                                     'method': 'manual'
                                 }
                                 feature.set_stage_data(stage_data)
                                 db.session.commit()
-                                flash(f'Git merge command generated for {working_copy_path}. Please run it in your local working copy.', 'info')
+                                if len(commit_hashes) > 1:
+                                    flash(f'Git merge commands generated for {len(commit_hashes)} commits in {working_copy_path}. Please run them in your local working copy.', 'info')
+                                else:
+                                    flash(f'Git merge command generated for {working_copy_path}. Please run it in your local working copy.', 'info')
                         except Exception as e:
                             logging.error(f"Error processing Git merge: {str(e)}")
                             flash(f'Error: {str(e)}', 'error')
@@ -477,6 +539,118 @@ def process_stage(feature_id, stage_index):
             except Exception as e:
                 logging.error(f"Error uploading test files: {str(e)}")
                 flash(f'Error uploading files: {str(e)}', 'error')
+        
+        elif action == 'save_release_notes' and stage_name == 'Release Documentation':
+            version_number = request.form.get('version_number', '').strip()
+            release_notes = request.form.get('release_notes', '').strip()
+            
+            if not version_number:
+                flash('Release version number is required!', 'error')
+                return redirect(url_for('process_stage', feature_id=feature_id, stage_index=stage_index))
+            
+            if not release_notes:
+                flash('Feature release notes are required!', 'error')
+                return redirect(url_for('process_stage', feature_id=feature_id, stage_index=stage_index))
+            
+            try:
+                release_version = ReleaseVersion.query.filter_by(version_number=version_number).first()
+                
+                if not release_version:
+                    release_version = ReleaseVersion(version_number=version_number)
+                    db.session.add(release_version)
+                    db.session.flush()
+                
+                feature.release_version_id = release_version.id
+                
+                stage_data[stage_name] = {
+                    'completed': False,
+                    'timestamp': datetime.utcnow().isoformat(),
+                    'version_number': version_number,
+                    'release_notes': release_notes
+                }
+                feature.set_stage_data(stage_data)
+                db.session.commit()
+                
+                flash(f'Release notes saved for version {version_number}!', 'success')
+                
+            except Exception as e:
+                logging.error(f"Error saving release notes: {str(e)}")
+                flash(f'Error saving release notes: {str(e)}', 'error')
+                db.session.rollback()
+        
+        elif action == 'complete_and_continue' and stage_name == 'Release Documentation':
+            version_number = request.form.get('version_number', '').strip()
+            release_notes = request.form.get('release_notes', '').strip()
+            
+            if not version_number or not release_notes:
+                flash('Please save release notes before completing!', 'error')
+                return redirect(url_for('process_stage', feature_id=feature_id, stage_index=stage_index))
+            
+            try:
+                release_version = ReleaseVersion.query.filter_by(version_number=version_number).first()
+                if not release_version:
+                    release_version = ReleaseVersion(version_number=version_number)
+                    db.session.add(release_version)
+                    db.session.flush()
+                
+                feature.release_version_id = release_version.id
+                
+                stage_data[stage_name] = {
+                    'completed': True,
+                    'timestamp': datetime.utcnow().isoformat(),
+                    'version_number': version_number,
+                    'release_notes': release_notes
+                }
+                feature.set_stage_data(stage_data)
+                feature.current_stage = 'Completed'
+                db.session.commit()
+                
+                flash(f'Feature "{feature.name}" completed and added to release {version_number}! You can now add more features to this release.', 'success')
+                return redirect(url_for('index'))
+                
+            except Exception as e:
+                logging.error(f"Error completing feature: {str(e)}")
+                flash(f'Error: {str(e)}', 'error')
+                db.session.rollback()
+        
+        elif action == 'release_version' and stage_name == 'Release Documentation':
+            version_number = request.form.get('version_number', '').strip()
+            release_notes = request.form.get('release_notes', '').strip()
+            
+            if not version_number or not release_notes:
+                flash('Please save release notes before releasing!', 'error')
+                return redirect(url_for('process_stage', feature_id=feature_id, stage_index=stage_index))
+            
+            try:
+                release_version = ReleaseVersion.query.filter_by(version_number=version_number).first()
+                if not release_version:
+                    release_version = ReleaseVersion(version_number=version_number)
+                    db.session.add(release_version)
+                    db.session.flush()
+                
+                feature.release_version_id = release_version.id
+                
+                stage_data[stage_name] = {
+                    'completed': True,
+                    'timestamp': datetime.utcnow().isoformat(),
+                    'version_number': version_number,
+                    'release_notes': release_notes
+                }
+                feature.set_stage_data(stage_data)
+                feature.current_stage = 'Released'
+                
+                release_version.is_released = True
+                release_version.released_at = datetime.utcnow()
+                
+                db.session.commit()
+                
+                flash(f'Redirecting to release summary for version {version_number}...', 'success')
+                return redirect(url_for('release_summary', version_id=release_version.id))
+                
+            except Exception as e:
+                logging.error(f"Error releasing version: {str(e)}")
+                flash(f'Error: {str(e)}', 'error')
+                db.session.rollback()
         
         elif action == 'skip':
             if stage_index < len(WORKFLOW_STAGES) - 1:
@@ -614,6 +788,71 @@ def download_patch(feature_id):
         return redirect(url_for('workflow', feature_id=feature_id))
     
     return send_file(patch_file, as_attachment=True, download_name=patch_data.get('patch_filename', 'patch.patch'))
+
+@app.route('/release/<int:version_id>/summary')
+def release_summary(version_id):
+    release_version = ReleaseVersion.query.get_or_404(version_id)
+    features = Feature.query.filter_by(release_version_id=version_id).all()
+    
+    features_data = []
+    for feature in features:
+        stage_data = feature.get_stage_data()
+        release_doc = stage_data.get('Release Documentation', {})
+        ai_analysis = stage_data.get('AI Analysis', {})
+        patch_gen = stage_data.get('Patch Generation', {})
+        unit_testing = stage_data.get('Unit Testing', {})
+        
+        features_data.append({
+            'feature': feature,
+            'release_notes': release_doc.get('release_notes', 'N/A'),
+            'analysis_file': ai_analysis.get('analysis_file'),
+            'analysis_filename': ai_analysis.get('analysis_filename'),
+            'brd_file': feature.file_path,
+            'patch_files': patch_gen.get('patch_files', []),
+            'test_cases_file': unit_testing.get('test_cases_path'),
+            'test_cases_filename': unit_testing.get('test_cases_filename'),
+            'playwright_prompt_file': unit_testing.get('playwright_prompt_path'),
+            'playwright_prompt_filename': unit_testing.get('playwright_prompt_filename')
+        })
+    
+    return render_template('release_summary.html', 
+                         release_version=release_version,
+                         features_data=features_data)
+
+@app.route('/download/file/<path:filepath>')
+def download_file(filepath):
+    from flask import send_from_directory, abort
+    import os
+    
+    allowed_dirs = [
+        os.path.abspath(app.config['UPLOAD_FOLDER']),
+        os.path.abspath(app.config['GENERATED_FOLDER'])
+    ]
+    
+    requested_path = os.path.abspath(filepath)
+    
+    is_allowed = False
+    for allowed_dir in allowed_dirs:
+        try:
+            common_path = os.path.commonpath([requested_path, allowed_dir])
+            if common_path == allowed_dir:
+                is_allowed = True
+                break
+        except ValueError:
+            continue
+    
+    if not is_allowed:
+        flash('Access denied: Invalid file path!', 'error')
+        abort(403)
+    
+    if not os.path.exists(requested_path):
+        flash('File not found!', 'error')
+        abort(404)
+    
+    directory = os.path.dirname(requested_path)
+    filename = os.path.basename(requested_path)
+    
+    return send_from_directory(directory, filename, as_attachment=True)
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000, debug=True)

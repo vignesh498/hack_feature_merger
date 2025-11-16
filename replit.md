@@ -116,3 +116,34 @@ A Flask-based web application that helps integrate features developed in older v
     * Conflicts detected: Show warning message with full dry-run output and recommendation to use AI-assisted merge
   - Enhanced UI with color-coded status indicators (green for success, red for conflicts)
   - Improved user experience with monospace font for paths and clear next-step instructions
+- 2025-11-16: Implemented multi-commit support for Stage 2 (Patch Generation) and Stage 4 (Merging):
+  - Stage 2: Now accepts comma-separated commit hashes/revisions (e.g., "abc123, def456, ghi789")
+  - Generates individual patch files for each commit hash provided
+  - Backend validates each commit hash and creates timestamped patch files
+  - UI displays all generated patches with detailed information per commit
+  - Stage 4: Enhanced to handle multiple commits from Patch Generation stage
+  - Generates combined merge commands for Git (cherry-pick) and SVN (merge -c)
+  - Dry-run merge executes for multiple commits with proper conflict detection
+  - UI shows all commits being merged with individual commit IDs listed
+  - Maintains backward compatibility with single-commit workflow
+  - Enhanced user feedback messages to indicate batch processing of multiple commits
+- 2025-11-16: Implemented Stage 6 (Release Documentation) with complete version management:
+  - Database: Created ReleaseVersion model with version_number, is_released, released_at fields
+  - Added release_version_id foreign key to Feature model for version tracking
+  - Migration script: migrate_release_version.py to update database schema
+  - Stage 6 UI: Form for version number input and feature release notes with three action buttons:
+    * Save Release Notes: Save progress without completing
+    * Complete & Continue: Complete feature and add more features to the release
+    * Release Version: Finalize the release and view comprehensive release summary
+  - Release Summary View: Displays all features in a release with downloadable artifacts:
+    * Feature release notes for each feature
+    * BRD/User Story documents
+    * AI analysis files (analysis.md)
+    * Patch files (multiple patches supported)
+    * Unit test cases sheets and Playwright prompts
+  - Secure file downloads: Implemented download_file route with path traversal protection
+    * Uses os.path.commonpath for robust directory containment validation
+    * Restricts downloads to uploads/ and generated/ directories only
+    * Returns 403 for unauthorized paths, 404 for missing files
+  - Version reuse: Multiple features can be added to the same release version
+  - Release finalization: Marks release as completed with timestamp when "Release Version" is clicked
